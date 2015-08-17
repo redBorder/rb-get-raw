@@ -95,5 +95,6 @@ setInterval(function () {
   process.stdout.write(chalk.green('Procesado ' + events + ' eventos') +
     ' | ' +
     chalk.yellow(Math.round(events / ((Date.now() - startTime) / 1000)) +
-      ' eventos/s\r'));
+      ' eventos/s') + ' | ' + chalk.red('Uso de memoria: ' +
+    Math.round(process.memoryUsage().rss / (1024 * 1024)) + 'Mb\r'));
 }, 250);
