@@ -10,5 +10,14 @@
   "dependencies": {
     "clarinet": "~0.11.0",
     "chalk": "~1.1.0"
+  },
+  "nexe": {
+    "input": "./rb_get_raw.js",
+    "output": "rb_get_raw^$",
+    "temp": "./tmp/nexe",
+    "runtime": {
+      "framework": "nodejs",
+      "version": "0.10.40"
+    }
   }
 }
