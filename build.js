@@ -19,8 +19,8 @@
 var nexe = require('nexe');
 
 nexe.compile({
-  input: 'rb_get_raw.js',
-  output: 'rb_get_raw',
+  input: './rb_get_raw.js',
+  output: './rb_get_raw',
   nodeVersion: '0.10.40',
   nodeTempDir: './tmp/nexe',
   python: 'python',
