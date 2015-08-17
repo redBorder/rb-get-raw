@@ -1,0 +1,9 @@
+{
+  "name": "rb_get_raw",
+  "version": "0.0.1",
+  "main": "rb_get_raw.js",
+  "dependencies": {
+    "clarinet": "~0.11.0",
+    "chalk": "~1.1.0"
+  }
+}
