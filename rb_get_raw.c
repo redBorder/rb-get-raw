@@ -1,23 +1,28 @@
-/*
- * Copyright (c) 2007-2014, Lloyd Hilaiel <me@lloyd.io>
- *
- * Permission to use, copy, modify, and/or distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- */
+/**
+** Copyright (C) 2015 Eneo Tecnologia S.L.
+** Author: Diego Fernández <bigomby@gmail.com>
+**
+** This program is free software; you can redistribute it and/or modify
+** it under the terms of the GNU Affero General Public License as
+** published by the Free Software Foundation, either version 3 of the
+** License, or (at your option) any later version.
+**
+** This program is distributed in the hope that it will be useful,
+** but WITHOUT ANY WARRANTY; without even the implied warranty of
+** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+** GNU Affero General Public License for more details.
+**
+** You should have received a copy of the GNU General Public License
+** along with this program.  If not, see <http://www.gnu.org/licenses/>.
+**/
+
 #include <yajl/yajl_parse.h>
 #include <yajl/yajl_gen.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#define BLOCK_SIZE 4096
 
 struct event {
 	char * str;
@@ -31,46 +36,81 @@ static uint on_event = 0;
 static uint first_key = 1;
 static FILE * output = NULL;
 
+////////////////////////////////////////////////////////////////////////////////
+void event_putc (struct event * event, char c) {
+	int resized = 0;
+
+	while (event->length >= event->size) {
+		resized = 1;
+		event->size += BLOCK_SIZE;
+	}
+	if (resized) {
+		event->str = (char*) realloc (event->str, event->size);
+		if (event->str == NULL) exit (1);
+	}
+	event->str[current_event.length] = c;
+	event->length++;
+}
+
+void event_puts (struct event * event, char * s, size_t len) {
+	int resized = 0;
+
+	while (event->size - event->length <= len) {
+		event->size += BLOCK_SIZE;
+		resized = 1;
+	}
+	if (resized) {
+		event->str = (char*) realloc (event->str, event->size);
+		if (event->str == NULL) exit (1);
+	}
+	memcpy ((void*)event->str + current_event.length, s, len);
+	event->length += len;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 static void new_event () {
 	on_event = 1;
 	first_key = 1;
 }
 
 static void end_event() {
-	fprintf (output, "%s\n", current_event);
-	//printf ("%s\n", current_event);
-	//memset (current_event, '\0', sizeof (current_event));
-	current_event[0] = '\0';
+	event_putc (&current_event, '\0');
+	fwrite (current_event.str, sizeof (char), current_event.length, output);
+	free (current_event.str);
+	current_event.str = NULL;
+	current_event.length = 0;
+	current_event.size = 0;
 	on_event = 0;
 }
 
+////////////////////////////////////////////////////////////////////////////////
 static void add_key (char * new_key, size_t len) {
 	if (first_key) {
 		first_key = 0;
 	} else {
-		strncat (current_event, ",", strlen (","));
+		event_putc (&current_event, ',');
 	}
-	strncat (current_event, "\"", strlen ("\""));
-	strncat (current_event, new_key, len);
-	strncat (current_event, "\":", strlen ("\":"));
+	event_putc (&current_event, '\"');
+	event_puts (&current_event, new_key, len);
+	event_putc (&current_event, '\"');
+	event_putc (&current_event, ':');
 }
 
 static void add_number (char * new_number, size_t len) {
-	strncat (current_event, new_number, len);
+	event_puts (&current_event, new_number, len);
 }
 
 static void add_string (char * new_string, size_t len) {
-	strncat (current_event, "\"", strlen ("\""));
-	strncat (current_event, new_string, len);
-	strncat (current_event, "\"", strlen ("\""));
+	event_putc (&current_event, '\"');
+	event_puts (&current_event, new_string, len);
+	event_putc (&current_event, '\"');
 }
 
 static void add_null () {
-	strncat (current_event, "null", strlen ("null"));
+	event_puts (&current_event, "null", strlen ("null"));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
 #define GEN_AND_RETURN(func)                                          \
   {                                                                   \
     yajl_gen_status __stat = func;                                    \
@@ -160,7 +200,6 @@ static yajl_callbacks callbacks = {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-
 int main () {
 	yajl_handle hand;
 	static unsigned char fileData[65536];
