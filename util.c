@@ -1,5 +1,7 @@
 #include "util.h"
 
+static int dns_done = 0;
+
 void event_putc (struct event_t * event, char c) {
 	int resized = 0;
 
@@ -101,14 +103,40 @@ int IsPrivateAddress (char * ip_addr) {
 	return 0;
 }
 
+struct dns_info_t {
+	char * ip;
+	char * name;
+};
+
+void dns_cb (struct dns_ctx * ctx,
+             struct dns_rr_ptr * result, void * opaque) {
+
+	struct dns_info_t * dns_info = (struct dns_info_t *) opaque;
+
+	if (result != NULL && result->dnsptr_ptr[0] != NULL) {
+		dns_info->name = result->dnsptr_ptr[0];
+	}
+
+	dns_done = 1;
+	if (result != NULL  ) {
+		//strncpy (opaque, result->dnsptr_ptr[0], strlen (he->h_name));
+		//add_cache (ip, he->h_name);
+	} else {
+		// add_cache (ip, "null");
+	}
+}
+
 int rdns (char * string_val, size_t string_len, char * host) {
-	struct hostent *he;
 	struct in_addr ipv4addr;
 	int ret = 0;
 	char * cached_host = NULL;
+	struct dns_info_t * dns_info = (struct dns_info_t *) calloc (1,
+	                               sizeof (struct dns_info_t));
 
 	char * ip = (char *)calloc (string_len, sizeof (char));
 	strncpy (ip, string_val, string_len);
+
+	dns_info->ip = ip;
 
 	if (inet_pton (AF_INET, ip, &ipv4addr)) {
 
@@ -117,26 +145,23 @@ int rdns (char * string_val, size_t string_len, char * host) {
 			if ((cached_host = get_cache (ip)) != NULL ) {
 
 				if (strlen (cached_host) > 0) {
-					// printf ("CACHE HIT: %s --> %s\n", ip, cached_host);
 					strncpy (host, cached_host, strlen (cached_host));
+					printf ("CACHE HIT: %s --> %s\n", dns_info->ip, host);
 					ret = 1;
 				} else {
 					ret = 0;
 				}
 			} else {
-
-				// CONSULTAhuelva piscina natural
-
-				he = gethostbyaddr (&ipv4addr, sizeof ipv4addr, AF_INET);
-
-				if (host != NULL && he != NULL && he->h_name != NULL ) {
-					// printf ("RESOLVED: %s --> %s\n", ip, he->h_name);
-					strncpy (host, he->h_name, strlen (he->h_name));
-					add_cache (ip, he->h_name);
-					ret = 1;
-				} else {
-					add_cache (ip, "null");
+				dns_done = 0;
+				dns_submit_a4ptr (&dns_defctx, &ipv4addr, dns_cb, dns_info);
+				while (!dns_done) {
+					time_t now = time (NULL);
+					dns_ioevent (&dns_defctx, now);
+					dns_timeouts (&dns_defctx, 5, now);
 				}
+				printf ("RESOLVED: %s --> %s\n", dns_info->ip, dns_info->name);
+				add_cache (dns_info->ip, dns_info->name);
+				ret = 1;
 			}
 		}
 	}
