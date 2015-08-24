@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <curl/curl.h>
+#include <udns.h>
 
 #include "enrichment.h"
 
@@ -31,21 +32,11 @@
 
 static int s_streamReformat = 0;
 static uint on_event = 0;
-static uint is_first_key = 1;
 static FILE * output = NULL;
-static char * previousVal = NULL;
-static size_t previousLen = 0;
+static char * last_element = NULL;
 
 static yajl_handle hand;
 static yajl_gen g;
-static 	yajl_status stat;
-
-////////////////////////////////////////////////////////////////////////////////
-static void end_event() {
-	end_process();
-	on_event = 0;
-	is_first_key = 1;
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 #define GEN_AND_RETURN(func)                                          \
@@ -56,14 +47,9 @@ static void end_event() {
       __stat = func;                                                  \
     }                                                                 \
     return __stat == yajl_gen_status_ok; }
+
 static int reformat_null (void * ctx) {
 	yajl_gen g = (yajl_gen) ctx;
-
-	if (on_event) {
-		process (previousVal, previousLen, NULL, 0, is_first_key, 3);
-		if (is_first_key) is_first_key = 0;
-	}
-
 	GEN_AND_RETURN (yajl_gen_null (g));
 }
 static int reformat_boolean (void * ctx, int boolean) {
@@ -74,11 +60,7 @@ static int reformat_boolean (void * ctx, int boolean) {
 static int reformat_number (void * ctx, const char * s, size_t l) {
 	yajl_gen g = (yajl_gen) ctx;
 
-	if (on_event) {
-		process (previousVal, previousLen, (char *)s,
-		         l, is_first_key, 2);
-		if (is_first_key) is_first_key = 0;
-	}
+	last_element = (char *)s + l;
 
 	GEN_AND_RETURN (yajl_gen_number (g, s, l));
 }
@@ -86,21 +68,17 @@ static int reformat_string (void * ctx, const unsigned char * stringVal,
                             size_t stringLen) {
 	yajl_gen g = (yajl_gen) ctx;
 
-	if (on_event) {
-		process (previousVal, previousLen, (char *)stringVal,
-		         stringLen, is_first_key, 1);
-		if (is_first_key) is_first_key = 0;
-	}
+	last_element = (char *)stringVal + stringLen;
 
 	GEN_AND_RETURN (yajl_gen_string (g, stringVal, stringLen));
 }
 static int reformat_map_key (void * ctx, const unsigned char * stringVal,
                              size_t stringLen) {
 	yajl_gen g = (yajl_gen) ctx;
-	if (on_event) {
-		previousVal = (char *) stringVal;
-		previousLen = stringLen;
-	} else if (!strncmp ((const char *)stringVal, "event", strlen ("event"))) {
+
+	if (!on_event
+	        && !strncmp ((const char *)stringVal, "event", strlen ("event"))) {
+
 		on_event = 1;
 	}
 
@@ -108,18 +86,30 @@ static int reformat_map_key (void * ctx, const unsigned char * stringVal,
 }
 static int reformat_start_map (void * ctx) {
 	yajl_gen g = (yajl_gen) ctx;
+
+	if (on_event) {
+		yajl_gen_clear (g);
+	}
+
 	GEN_AND_RETURN (yajl_gen_map_open (g));
 }
+
 static int reformat_end_map (void * ctx) {
 	yajl_gen g = (yajl_gen) ctx;
 
-	// README This function assumes that "event" object doesn't contains nested
-	// objects
+	char *event = NULL;
+	size_t aux_size = 0;
+
+	yajl_gen_status rc = yajl_gen_map_close (g);
+
 	if (on_event) {
-		end_event();
+		yajl_gen_get_buf (g, (const unsigned char **)&event, &aux_size);
+		on_event = 0;
+		// printf ("%s\n\n", event + 1);
+		process ((char *)event + 1);
 	}
 
-	GEN_AND_RETURN (yajl_gen_map_close (g));
+	GEN_AND_RETURN (rc);
 }
 static int reformat_start_array (void * ctx) {
 	yajl_gen g = (yajl_gen) ctx;
@@ -143,20 +133,14 @@ static yajl_callbacks callbacks = {
 	reformat_end_array
 };
 
-struct MemoryStruct {
-	char *memory;
-	size_t size;
-};
-
 static size_t
 WriteMemoryCallback (void *contents, size_t size, size_t nmemb, void *userp) {
 	size_t realsize = size * nmemb;
-	size_t len;
 
-	stat = yajl_parse (hand, (const unsigned char *) contents, realsize);
-	const unsigned char * buf;
+	//memcpy (fileData, contents + fileData_pos, realsize);
 
-	yajl_gen_get_buf (g, &buf, &len);
+	//printf ("%d\n",  printbuf_length (&p));
+	yajl_parse (hand, (const unsigned char *) contents, realsize);
 
 	return realsize;
 }
@@ -164,8 +148,8 @@ WriteMemoryCallback (void *contents, size_t size, size_t nmemb, void *userp) {
 ////////////////////////////////////////////////////////////////////////////////
 int main () {
 
+	dns_init (&dns_defctx, 1);
 	int retval = 0;
-	// DNS INIT
 
 	if (! (output = fopen ("output", "w"))) {
 		printf ("No se puede abrir fichero de salida\n");
@@ -177,7 +161,7 @@ int main () {
 		CURL *curl_handle;
 		CURLcode res;
 		g = yajl_gen_alloc (NULL);
-		yajl_gen_config (g, yajl_gen_beautify, 1);
+		yajl_gen_config (g, yajl_gen_beautify, 0);
 		yajl_gen_config (g, yajl_gen_validate_utf8, 1);
 
 		hand = yajl_alloc (&callbacks, NULL, (void *) g);
@@ -199,7 +183,7 @@ int main () {
 		curl_easy_setopt (curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
 
 		curl_easy_setopt (curl_handle, CURLOPT_POSTFIELDS,
-		                  "{\"dataSource\":\"rb_flow\",\"granularity\":{\"type\":\"duration\",\"duration\":300000},\"intervals\":[\"2015-08-24T9:00:00+00:00/2015-08-24T10:00:00+00:00\"],\"queryType\":\"groupBy\",\"dimensions\":[\"application_id_name\",\"biflow_direction\",\"conversation\",\"direction\",\"engine_id_name\",\"http_user_agent_os\",\"http_host\",\"http_social_media\",\"http_social_user\",\"http_referer_l1\",\"l4_proto\",\"ip_protocol_version\",\"sensor_name\",\"sensor_uuid\",\"scatterplot\",\"src\",\"src_country_code\",\"src_net_name\",\"src_port\",\"src_as_name\",\"client_id\",\"client_mac\",\"client_mac_vendor\",\"dot11_status\",\"src_vlan\",\"src_map\",\"srv_port\",\"dst\",\"dst_country_code\",\"dst_net_name\",\"dst_port\",\"dst_as_name\",\"dst_vlan\",\"dst_map\",\"input_snmp\",\"output_snmp\",\"input_vrf\",\"output_vrf\",\"tos\",\"client_latlong\",\"coordinates_map\",\"deployment\",\"deployment_uuid\",\"namespace\",\"namespace_uuid\",\"campus\",\"campus_uuid\",\"building\",\"building_uuid\",\"floor\",\"floor_uuid\",\"zone\",\"zone_uuid\",\"wireless_uuid\",\"client_rssi\",\"client_rssi_num\",\"client_snr\",\"client_snr_num\",\"wireless_station\",\"hnblocation\",\"hnbgeolocation\",\"rat\",\"darklist_score_name\",\"darklist_category\",\"darklist_protocol\",\"darklist_direction\",\"darklist_score\",\"market\",\"market_uuid\",\"organization\",\"organization_uuid\",\"dot11_protocol\",\"type\",\"duration\"],\"aggregations\":[{\"type\":\"longSum\",\"name\":\"events\",\"fieldName\":\"events\"},{\"type\":\"longSum\",\"name\":\"pkts\",\"fieldName\":\"sum_pkts\"},{\"type\":\"longSum\",\"name\":\"bytes\",\"fieldName\":\"sum_bytes\"}]}");
+		                  "{\"dataSource\":\"rb_flow\",\"granularity\":{\"type\":\"duration\",\"duration\":300000},\"intervals\":[\"2015-08-24T9:00:00+00:00/2015-08-24T9:10:00+00:00\"],\"queryType\":\"groupBy\",\"dimensions\":[\"application_id_name\",\"biflow_direction\",\"conversation\",\"direction\",\"engine_id_name\",\"http_user_agent_os\",\"http_host\",\"http_social_media\",\"http_social_user\",\"http_referer_l1\",\"l4_proto\",\"ip_protocol_version\",\"sensor_name\",\"sensor_uuid\",\"scatterplot\",\"src\",\"src_country_code\",\"src_net_name\",\"src_port\",\"src_as_name\",\"client_id\",\"client_mac\",\"client_mac_vendor\",\"dot11_status\",\"src_vlan\",\"src_map\",\"srv_port\",\"dst\",\"dst_country_code\",\"dst_net_name\",\"dst_port\",\"dst_as_name\",\"dst_vlan\",\"dst_map\",\"input_snmp\",\"output_snmp\",\"input_vrf\",\"output_vrf\",\"tos\",\"client_latlong\",\"coordinates_map\",\"deployment\",\"deployment_uuid\",\"namespace\",\"namespace_uuid\",\"campus\",\"campus_uuid\",\"building\",\"building_uuid\",\"floor\",\"floor_uuid\",\"zone\",\"zone_uuid\",\"wireless_uuid\",\"client_rssi\",\"client_rssi_num\",\"client_snr\",\"client_snr_num\",\"wireless_station\",\"hnblocation\",\"hnbgeolocation\",\"rat\",\"darklist_score_name\",\"darklist_category\",\"darklist_protocol\",\"darklist_direction\",\"darklist_score\",\"market\",\"market_uuid\",\"organization\",\"organization_uuid\",\"dot11_protocol\",\"type\",\"duration\"],\"aggregations\":[{\"type\":\"longSum\",\"name\":\"events\",\"fieldName\":\"events\"},{\"type\":\"longSum\",\"name\":\"pkts\",\"fieldName\":\"sum_pkts\"},{\"type\":\"longSum\",\"name\":\"bytes\",\"fieldName\":\"sum_bytes\"}]}");
 
 		res = curl_easy_perform (curl_handle);
 
