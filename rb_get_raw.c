@@ -21,93 +21,30 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <curl/curl.h>
 
-#define BLOCK_SIZE 4096
+#include "enrichment.h"
 
-struct event {
-	char * str;
-	size_t size;
-	size_t length;
-};
+#define STR_TYPE 1
+#define NUM_TYPE 2
+#define NULL_TYPE 3
 
-static struct event current_event = {NULL, 0, 0};
 static int s_streamReformat = 0;
 static uint on_event = 0;
-static uint first_key = 1;
+static uint is_first_key = 1;
 static FILE * output = NULL;
+static char * previousVal = NULL;
+static size_t previousLen = 0;
+
+static yajl_handle hand;
+static yajl_gen g;
+static 	yajl_status stat;
 
 ////////////////////////////////////////////////////////////////////////////////
-void event_putc (struct event * event, char c) {
-	int resized = 0;
-
-	while (event->length >= event->size) {
-		resized = 1;
-		event->size += BLOCK_SIZE;
-	}
-	if (resized) {
-		event->str = (char*) realloc (event->str, event->size);
-		if (event->str == NULL) exit (1);
-	}
-	event->str[current_event.length] = c;
-	event->length++;
-}
-
-void event_puts (struct event * event, char * s, size_t len) {
-	int resized = 0;
-
-	while (event->size - event->length <= len) {
-		event->size += BLOCK_SIZE;
-		resized = 1;
-	}
-	if (resized) {
-		event->str = (char*) realloc (event->str, event->size);
-		if (event->str == NULL) exit (1);
-	}
-	memcpy ((void*)event->str + current_event.length, s, len);
-	event->length += len;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-static void new_event () {
-	on_event = 1;
-	first_key = 1;
-}
-
 static void end_event() {
-	event_putc (&current_event, '\0');
-	fwrite (current_event.str, sizeof (char), current_event.length, output);
-	free (current_event.str);
-	current_event.str = NULL;
-	current_event.length = 0;
-	current_event.size = 0;
+	end_process();
 	on_event = 0;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-static void add_key (char * new_key, size_t len) {
-	if (first_key) {
-		first_key = 0;
-	} else {
-		event_putc (&current_event, ',');
-	}
-	event_putc (&current_event, '\"');
-	event_puts (&current_event, new_key, len);
-	event_putc (&current_event, '\"');
-	event_putc (&current_event, ':');
-}
-
-static void add_number (char * new_number, size_t len) {
-	event_puts (&current_event, new_number, len);
-}
-
-static void add_string (char * new_string, size_t len) {
-	event_putc (&current_event, '\"');
-	event_puts (&current_event, new_string, len);
-	event_putc (&current_event, '\"');
-}
-
-static void add_null () {
-	event_puts (&current_event, "null", strlen ("null"));
+	is_first_key = 1;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -123,7 +60,8 @@ static int reformat_null (void * ctx) {
 	yajl_gen g = (yajl_gen) ctx;
 
 	if (on_event) {
-		add_null();
+		process (previousVal, previousLen, NULL, 0, is_first_key, 3);
+		if (is_first_key) is_first_key = 0;
 	}
 
 	GEN_AND_RETURN (yajl_gen_null (g));
@@ -132,11 +70,14 @@ static int reformat_boolean (void * ctx, int boolean) {
 	yajl_gen g = (yajl_gen) ctx;
 	GEN_AND_RETURN (yajl_gen_bool (g, boolean));
 }
+
 static int reformat_number (void * ctx, const char * s, size_t l) {
 	yajl_gen g = (yajl_gen) ctx;
 
 	if (on_event) {
-		add_number ((char *) s, l);
+		process (previousVal, previousLen, (char *)s,
+		         l, is_first_key, 2);
+		if (is_first_key) is_first_key = 0;
 	}
 
 	GEN_AND_RETURN (yajl_gen_number (g, s, l));
@@ -146,7 +87,9 @@ static int reformat_string (void * ctx, const unsigned char * stringVal,
 	yajl_gen g = (yajl_gen) ctx;
 
 	if (on_event) {
-		add_string ((char *) stringVal, stringLen);
+		process (previousVal, previousLen, (char *)stringVal,
+		         stringLen, is_first_key, 1);
+		if (is_first_key) is_first_key = 0;
 	}
 
 	GEN_AND_RETURN (yajl_gen_string (g, stringVal, stringLen));
@@ -155,9 +98,10 @@ static int reformat_map_key (void * ctx, const unsigned char * stringVal,
                              size_t stringLen) {
 	yajl_gen g = (yajl_gen) ctx;
 	if (on_event) {
-		add_key ((char *)stringVal, stringLen);
+		previousVal = (char *) stringVal;
+		previousLen = stringLen;
 	} else if (!strncmp ((const char *)stringVal, "event", strlen ("event"))) {
-		new_event();
+		on_event = 1;
 	}
 
 	GEN_AND_RETURN (yajl_gen_string (g, stringVal, stringLen));
@@ -199,69 +143,77 @@ static yajl_callbacks callbacks = {
 	reformat_end_array
 };
 
+struct MemoryStruct {
+	char *memory;
+	size_t size;
+};
+
+static size_t
+WriteMemoryCallback (void *contents, size_t size, size_t nmemb, void *userp) {
+	size_t realsize = size * nmemb;
+	size_t len;
+
+	stat = yajl_parse (hand, (const unsigned char *) contents, realsize);
+	const unsigned char * buf;
+
+	yajl_gen_get_buf (g, &buf, &len);
+
+	return realsize;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 int main () {
-	yajl_handle hand;
-	static unsigned char fileData[65536];
-	/* generator config */
-	yajl_gen g;
-	yajl_status stat;
-	size_t rd;
-	int retval = 0;
-	g = yajl_gen_alloc (NULL);
-	yajl_gen_config (g, yajl_gen_beautify, 1);
-	yajl_gen_config (g, yajl_gen_validate_utf8, 1);
-	FILE * input = NULL;
 
-	/* ok.  open file.  let's read and parse */
-	if (! (input = fopen ("input.json", "r"))) {
-		printf ("No se puede abrir fichero de entrada\n");
-		exit (1);
-	} else {
-		printf ("Abierto fichero de entrada\n");
-	}
+	int retval = 0;
+	// DNS INIT
 
 	if (! (output = fopen ("output", "w"))) {
 		printf ("No se puede abrir fichero de salida\n");
 		exit (1);
 	} else {
 		printf ("Abierto fichero de salida\n");
-	}
+		load_file (output);
 
-	hand = yajl_alloc (&callbacks, NULL, (void *) g);
+		CURL *curl_handle;
+		CURLcode res;
+		g = yajl_gen_alloc (NULL);
+		yajl_gen_config (g, yajl_gen_beautify, 1);
+		yajl_gen_config (g, yajl_gen_validate_utf8, 1);
 
-	// /* and let's allow comments by default */
-	yajl_config (hand, yajl_allow_comments, 1);
+		hand = yajl_alloc (&callbacks, NULL, (void *) g);
+		yajl_config (hand, yajl_allow_comments, 1);
 
-	for (;;) {
-		rd = fread ((void *) fileData, 1, sizeof (fileData) - 1, input);
-		if (rd == 0) {
-			if (!feof (input)) {
-				fprintf (stderr, "error on file read.\n");
-				retval = 1;
-			}
-			break;
+		curl_global_init (CURL_GLOBAL_ALL);
+		curl_handle = curl_easy_init();
+
+		curl_easy_setopt (curl_handle, CURLOPT_URL,
+		                  "http://rbb1xdbmdfoi:8080/druid/v2/?pretty=true");
+
+		struct curl_slist * headers = NULL;
+		headers = curl_slist_append (headers, "Accept: application/json");
+		headers = curl_slist_append (headers,
+		                             "Content-Type: application/json");
+		headers = curl_slist_append (headers, "charsets: utf-8");
+		curl_easy_setopt (curl_handle, CURLOPT_HTTPHEADER, headers);
+
+		curl_easy_setopt (curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+
+		curl_easy_setopt (curl_handle, CURLOPT_POSTFIELDS,
+		                  "{\"dataSource\":\"rb_flow\",\"granularity\":{\"type\":\"duration\",\"duration\":300000},\"intervals\":[\"2015-08-24T9:00:00+00:00/2015-08-24T10:00:00+00:00\"],\"queryType\":\"groupBy\",\"dimensions\":[\"application_id_name\",\"biflow_direction\",\"conversation\",\"direction\",\"engine_id_name\",\"http_user_agent_os\",\"http_host\",\"http_social_media\",\"http_social_user\",\"http_referer_l1\",\"l4_proto\",\"ip_protocol_version\",\"sensor_name\",\"sensor_uuid\",\"scatterplot\",\"src\",\"src_country_code\",\"src_net_name\",\"src_port\",\"src_as_name\",\"client_id\",\"client_mac\",\"client_mac_vendor\",\"dot11_status\",\"src_vlan\",\"src_map\",\"srv_port\",\"dst\",\"dst_country_code\",\"dst_net_name\",\"dst_port\",\"dst_as_name\",\"dst_vlan\",\"dst_map\",\"input_snmp\",\"output_snmp\",\"input_vrf\",\"output_vrf\",\"tos\",\"client_latlong\",\"coordinates_map\",\"deployment\",\"deployment_uuid\",\"namespace\",\"namespace_uuid\",\"campus\",\"campus_uuid\",\"building\",\"building_uuid\",\"floor\",\"floor_uuid\",\"zone\",\"zone_uuid\",\"wireless_uuid\",\"client_rssi\",\"client_rssi_num\",\"client_snr\",\"client_snr_num\",\"wireless_station\",\"hnblocation\",\"hnbgeolocation\",\"rat\",\"darklist_score_name\",\"darklist_category\",\"darklist_protocol\",\"darklist_direction\",\"darklist_score\",\"market\",\"market_uuid\",\"organization\",\"organization_uuid\",\"dot11_protocol\",\"type\",\"duration\"],\"aggregations\":[{\"type\":\"longSum\",\"name\":\"events\",\"fieldName\":\"events\"},{\"type\":\"longSum\",\"name\":\"pkts\",\"fieldName\":\"sum_pkts\"},{\"type\":\"longSum\",\"name\":\"bytes\",\"fieldName\":\"sum_bytes\"}]}");
+
+		res = curl_easy_perform (curl_handle);
+
+		if (res != CURLE_OK) {
+			fprintf (stderr, "curl_easy_perform() failed: %s\n",
+			         curl_easy_strerror (res));
 		}
-		fileData[rd] = 0;
-		stat = yajl_parse (hand, fileData, rd);
-		if (stat != yajl_status_ok) break;
-		{
-			const unsigned char * buf;
-			size_t len;
-			yajl_gen_get_buf (g, &buf, &len);
-			yajl_gen_clear (g);
-		}
+
+		curl_easy_cleanup (curl_handle);
+		curl_global_cleanup();
+		yajl_gen_free (g);
+		yajl_free (hand);
+		fclose (output);
 	}
-	stat = yajl_complete_parse (hand);
-	if (stat != yajl_status_ok) {
-		unsigned char * str = yajl_get_error (hand, 1, fileData, rd);
-		fprintf (stderr, "%s", (const char *) str);
-		yajl_free_error (hand, str);
-		retval = 1;
-	}
-	yajl_gen_free (g);
-	yajl_free (hand);
-	fclose (output);
-	fclose (input);
+
 	return retval;
 }
