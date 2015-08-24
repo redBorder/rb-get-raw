@@ -1,7 +1,6 @@
 #include "enrichment.h"
 
 static FILE * output = NULL;
-static yajl_val node;
 static int enrich = 1;
 
 struct keyval_t {
@@ -9,9 +8,7 @@ struct keyval_t {
 	int type;
 	int enriched;
 	char * key;
-	size_t key_len;
 	char * val;
-	size_t val_len;
 };
 
 struct target_t {
@@ -40,6 +37,7 @@ static struct propperties_t props = {NULL, 0};
 
 int load_file (FILE * _output) {
 
+	static yajl_val node;
 	size_t rd;
 	char errbuf[1024];
 	FILE * file = NULL;
@@ -170,11 +168,13 @@ static void add_enrich (char * keyVal,
 	                          sizeof (struct keyval_t));
 
 	enrichment_aux->key_val->key = keyVal;
-	enrichment_aux->key_val->key_len = keyLen;
+	// enrichment_aux->key_val->key_len = keyLen;
 	enrichment_aux->key_val->val = valueVal;
-	enrichment_aux->key_val->val_len = valueLen;
+	// enrichment_aux->key_val->val_len = valueLen;
 	enrichment_aux->key_val->enriched = 0;
 }
+
+struct keyval_t_list * current_event = NULL;
 
 char * src_addrr = NULL;
 size_t src_addrr_len = 0;
@@ -182,87 +182,117 @@ char * dst_addrr = NULL;
 size_t dst_addrr_len = 0;
 int direction = 0;
 
-// static struct keyval_t_list * enrichment = NULL;
-static struct keyval_t_list * current_event = NULL;
+void process (char * event) {
 
-void process (char * keyVal,
-              size_t keyLen,
-              char * valueVal,
-              size_t valueLen,
-              int is_first_key,
-              int type) {
+	char errbuf[BUFSIZ];
+	yajl_val node = yajl_tree_parse ((const char *) event, errbuf, sizeof (errbuf));
 
-	int i = 0;
-	int j = 0;
-	int k = 0;
+	if (node == NULL) {
+		fprintf (stderr, "parse_error: ");
+		if (strlen (errbuf)) fprintf (stderr, " %s", errbuf);
+		else fprintf (stderr, "unknown error");
+		fprintf (stderr, "\n");
+		return;
+	}
 
-	// Check is there is enrichment data for each key
-	if (valueVal != NULL) {
-		for (i = 0; i < props.len; i++) {
-			if (!strncmp (props.propperties[i].name, keyVal, keyLen)) {
-				for (j = 0; j < props.propperties[i].targets->len ; j++) {
-					if (!strncmp (props.propperties[i].targets[j].name, valueVal, valueLen)) {
-						for (k = 0; k < props.propperties[i].targets[j].len; k++) {
-							add_enrich (props.propperties[i].targets[j].key_vals[k].key,
-							            strlen (props.propperties[i].targets[j].key_vals[k].key),
-							            props.propperties[i].targets[j].key_vals[k].val,
-							            strlen (props.propperties[i].targets[j].key_vals[k].val));
+	const char * root_path[] = { (const char *) 0 };
+	yajl_val root = yajl_tree_get (node, root_path, yajl_t_object);
+
+	size_t len = YAJL_GET_OBJECT (root)->len;
+
+	int p = 0;
+	int type = 0;
+	int is_first_key = 1;
+
+	// Iterate through propperties
+	for (p = 0; p < len; p++) {
+
+
+		const char * keyVal = (char *) YAJL_GET_OBJECT (root)->keys[p];
+		char * valueVal = NULL;
+
+		if (YAJL_IS_NULL (YAJL_GET_OBJECT (root)->values[p])) {
+			valueVal = "null";
+			type = 3;
+		} else if (YAJL_IS_NUMBER (YAJL_GET_OBJECT (root)->values[p])) {
+			valueVal = YAJL_GET_NUMBER ( YAJL_GET_OBJECT (root)->values[p]);
+			type = 2;
+		} else {
+			valueVal = YAJL_GET_STRING ( YAJL_GET_OBJECT (root)->values[p]);
+			type = 1;
+		}
+
+		int i = 0;
+		int j = 0;
+		int k = 0;
+
+
+		// Check is there is enrichment data for each key
+		if (YAJL_IS_STRING (YAJL_GET_OBJECT (root)->values[p])) {
+			for (i = 0; i < props.len; i++) {
+				if (!strcmp (props.propperties[i].name, keyVal)) {
+					for (j = 0; j < props.propperties[i].targets->len ; j++) {
+						if (!strcmp (props.propperties[i].targets[j].name, valueVal)) {
+							for (k = 0; k < props.propperties[i].targets[j].len; k++) {
+								add_enrich (props.propperties[i].targets[j].key_vals[k].key,
+								            strlen (props.propperties[i].targets[j].key_vals[k].key),
+								            props.propperties[i].targets[j].key_vals[k].val,
+								            strlen (props.propperties[i].targets[j].key_vals[k].val));
+							}
+							break;
 						}
-						break;
 					}
 				}
 			}
 		}
 
-		if (!strncmp ("direction", keyVal, keyLen)) {
-			if (!strncmp ("ingress", valueVal, valueLen)) {
+		if (!strcmp ("direction", keyVal)) {
+			if (!strcmp ("ingress", valueVal)) {
 				direction = 1;
 			} else {
 				direction = 0;
 			}
 		}
 
-		if (!strncmp ("src", keyVal, keyLen)) {
+		if (!strcmp ("src", keyVal)) {
 			src_addrr = valueVal;
-			src_addrr_len = valueLen;
 		}
 
-		if (!strncmp ("dst", keyVal, keyLen)) {
+		if (!strcmp ("dst", keyVal)) {
 			dst_addrr = valueVal;
-			dst_addrr_len = valueLen;
 		}
-	}
 
-	struct keyval_t_list * current_event_aux = NULL;
+		struct keyval_t_list * current_event_aux = NULL;
 
-	if (current_event == NULL) {
-		current_event = (struct keyval_t_list *) calloc (1,
-		                sizeof (struct keyval_t_list));
-		current_event->next = NULL;
-		current_event_aux = current_event;
-	} else {
+		if (current_event == NULL) {
+			current_event = (struct keyval_t_list *) calloc (1,
+			                sizeof (struct keyval_t_list));
+			current_event->next = NULL;
+			current_event_aux = current_event;
+		} else {
 
-		current_event_aux = current_event;
+			current_event_aux = current_event;
 
-		while (current_event_aux->next != NULL) {
+			while (current_event_aux->next != NULL) {
+				current_event_aux = current_event_aux->next;
+			}
+
+			current_event_aux->next = (struct keyval_t_list *) calloc (1,
+			                          sizeof (struct keyval_t_list));
 			current_event_aux = current_event_aux->next;
+			current_event_aux->next = NULL;
 		}
 
-		current_event_aux->next = (struct keyval_t_list *) calloc (1,
-		                          sizeof (struct keyval_t_list));
-		current_event_aux = current_event_aux->next;
-		current_event_aux->next = NULL;
+		current_event_aux->key_val = (struct keyval_t *)calloc (1,
+		                             sizeof (struct keyval_t));
+
+		current_event_aux->key_val->key = (char *) keyVal;
+		current_event_aux->key_val->val = valueVal;
+		current_event_aux->key_val->type = type;
+		current_event_aux->key_val->is_first_key = is_first_key;
+		is_first_key = 0;
 	}
-
-	current_event_aux->key_val = (struct keyval_t *)calloc (1,
-	                             sizeof (struct keyval_t));
-
-	current_event_aux->key_val->key = keyVal;
-	current_event_aux->key_val->key_len = keyLen;
-	current_event_aux->key_val->val = valueVal;
-	current_event_aux->key_val->val_len = valueLen;
-	current_event_aux->key_val->type = type;
-	current_event_aux->key_val->is_first_key = is_first_key;
+	end_process();
 }
 
 int eventos = 0;
@@ -278,14 +308,14 @@ void end_process() {
 	int enriched = 0;
 
 	if (direction) {
-		if (rdns (dst_addrr, dst_addrr_len, host_name)) {
+		if (rdns (dst_addrr, strlen (dst_addrr), host_name)) {
 			add_enrich ("dst_net_name",
 			            strlen ("dst_net_name"),
 			            host_name,
 			            strlen (host_name));
 		}
 	} else {
-		if (rdns (src_addrr, src_addrr_len, host_name)) {
+		if (rdns (src_addrr, strlen (src_addrr), host_name)) {
 			add_enrich ("src_net_name",
 			            strlen ("src_net_name"),
 			            host_name,
@@ -295,16 +325,16 @@ void end_process() {
 
 	while (current_event_aux != NULL) {
 		add_key (&processed_event, current_event_aux->key_val->key,
-		         current_event_aux->key_val->key_len,
+		         strlen (current_event_aux->key_val->key),
 		         current_event_aux->key_val->is_first_key);
 
 		enrichment_aux = enrichment;
 
 		while (enrichment_aux != NULL) {
 			if (!strncmp (current_event_aux->key_val->key, enrichment_aux->key_val->key,
-			              enrichment_aux->key_val->key_len) && enrich) {
+			              strlen (enrichment_aux->key_val->key)) && enrich) {
 				add_string (&processed_event, enrichment_aux->key_val->val,
-				            enrichment_aux->key_val->val_len);
+				            strlen (enrichment_aux->key_val->val));
 				enrichment_aux->key_val->enriched = 1;
 				enriched++;
 				break;
@@ -317,11 +347,11 @@ void end_process() {
 			switch (current_event_aux->key_val->type) {
 			case 1:
 				add_string (&processed_event, current_event_aux->key_val->val,
-				            current_event_aux->key_val->val_len);
+				            strlen (current_event_aux->key_val->val));
 				break;
 			case 2:
 				add_number (&processed_event, current_event_aux->key_val->val,
-				            current_event_aux->key_val->val_len);
+				            strlen (current_event_aux->key_val->val));
 				break;
 			case 3:
 				add_null (&processed_event);
@@ -342,9 +372,9 @@ void end_process() {
 
 		if (enrichment_aux->key_val->enriched == 0 && enrich) {
 			add_key (&processed_event, enrichment_aux->key_val->key,
-			         enrichment_aux->key_val->key_len, 0);
+			         strlen (enrichment_aux->key_val->key), 0);
 			add_string (&processed_event, enrichment_aux->key_val->val,
-			            enrichment_aux->key_val->val_len);
+			            strlen (enrichment_aux->key_val->val));
 		}
 
 		enrichment_aux = enrichment_aux->next;

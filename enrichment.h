@@ -10,11 +10,6 @@
 
 int load_file ();
 void enrich_free();
-void process (char * keyVal,
-              size_t keyLen,
-              char * valueVal,
-              size_t valueLen,
-              int is_fist_key,
-              int type);
+void process (char * event);
 void end_process();
 void close_output();
