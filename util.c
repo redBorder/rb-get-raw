@@ -120,8 +120,11 @@ void dns_cb (struct dns_ctx * ctx,
 
 		dns_info->name = strdup (result->dnsptr_ptr[0]);
 		free (result);
-		add_cache (dns_info->ip, dns_info->name);
+	} else {
+		dns_info->name = strdup ("unknown");
 	}
+
+	add_cache (dns_info->ip, dns_info->name);
 }
 
 int rdns (char * string_val, char * host) {
@@ -156,7 +159,7 @@ int rdns (char * string_val, char * host) {
 				while (!dns_done) {
 					time_t now = time (NULL);
 					dns_ioevent (&dns_defctx, now);
-					dns_timeouts (&dns_defctx, 5, now);
+					dns_timeouts (&dns_defctx, 1, now);
 				}
 				printf ("RESOLVED: %s --> %s\n", dns_info->ip, dns_info->name);
 				ret = 1;
