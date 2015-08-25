@@ -147,7 +147,7 @@ int rdns (char * string_val, char * host) {
 
 				if (strlen (cached_host) > 0) {
 					strncpy (host, cached_host, strlen (cached_host));
-					printf ("CACHE HIT: %s --> %s\n", dns_info->ip, host);
+					// printf ("CACHE HIT: %s --> %s\n", dns_info->ip, host);
 					ret = 1;
 				} else {
 					ret = 0;
@@ -161,7 +161,7 @@ int rdns (char * string_val, char * host) {
 					dns_ioevent (&dns_defctx, now);
 					dns_timeouts (&dns_defctx, 1, now);
 				}
-				printf ("RESOLVED: %s --> %s\n", dns_info->ip, dns_info->name);
+				// printf ("RESOLVED: %s --> %s\n", dns_info->ip, dns_info->name);
 				ret = 1;
 			}
 		}

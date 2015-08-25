@@ -1,6 +1,5 @@
 #include "enrichment.h"
 
-static FILE * output = NULL;
 static int enrich = 1;
 
 struct keyval_t {
@@ -33,9 +32,24 @@ struct keyval_t_list {
 	struct keyval_t_list * next;
 };
 
+static FILE * output_file = NULL;
 static struct propperties_t props = {NULL, 0};
 
-int load_file (FILE * _output) {
+int load_output_file (char * output_filename) {
+
+	if (output_filename != NULL) {
+		if (! (output_file = fopen (output_filename, "w"))) {
+			printf ("Can't open output file\n");
+			return 1;
+		}
+	} else {
+		output_file = stdout;
+	}
+
+	return 0;
+}
+
+int load_file () {
 
 	static yajl_val node;
 	size_t rd;
@@ -43,18 +57,9 @@ int load_file (FILE * _output) {
 	FILE * file = NULL;
 	unsigned char fileData[65536];
 
-	output = _output;
-
 	if ( ! (file = fopen ("enrichment.json", "r"))) {
-		printf ("No se puede abrir el fichero de enriquecimiento\n");
+		printf ("Can't open enrichment file\n");
 		exit (1);
-	}
-
-	if (! (output = fopen ("output", "w"))) {
-		printf ("No se puede abrir fichero de salida\n");
-		exit (1);
-	} else {
-		printf ("Abierto fichero de salida\n");
 	}
 
 	/* null plug buffers */
@@ -98,7 +103,7 @@ int load_file (FILE * _output) {
 	// Iterate through propperties
 	for (i = 0; i < YAJL_GET_OBJECT (root)->len; i++) {
 		props.propperties[i].name = YAJL_GET_OBJECT (root)->keys[i];
-		printf ("%s\n", props.propperties[i].name);
+		// printf ("%s\n", props.propperties[i].name);
 
 		// Go to the propperty
 		const char * propperty_path[] = { YAJL_GET_OBJECT (root)->keys[i],
@@ -111,7 +116,7 @@ int load_file (FILE * _output) {
 		// Iterate through targets
 		for (j = 0; j < YAJL_GET_OBJECT (propperty)->len; j++) {
 			props.propperties[i].targets[j].name = YAJL_GET_OBJECT (propperty)->keys[j];
-			printf ("\t%s\n", props.propperties[i].targets[j].name);
+			// printf ("\t%s\n", props.propperties[i].targets[j].name);
 
 			// Go to the target
 			const char * target_path[] = { YAJL_GET_OBJECT (root)->keys[i],
@@ -130,8 +135,8 @@ int load_file (FILE * _output) {
 				props.propperties[i].targets[j].key_vals[k].val = YAJL_GET_STRING (
 				            YAJL_GET_OBJECT (
 				                target)->values[k]);
-				printf ("\t\t%s: %s\n", props.propperties[i].targets[j].key_vals[k].key,
-				        props.propperties[i].targets[j].key_vals[k].val);
+				// printf ("\t\t%s: %s\n", props.propperties[i].targets[j].key_vals[k].key,
+				// props.propperties[i].targets[j].key_vals[k].val);
 			}
 		}
 	}
@@ -182,7 +187,7 @@ char * dst_addrr = NULL;
 size_t dst_addrr_len = 0;
 int direction = 0;
 
-void process (char * event) {
+void process (char * event, int resolve_names) {
 
 	char errbuf[BUFSIZ];
 	yajl_val node = yajl_tree_parse ((const char *) event, errbuf, sizeof (errbuf));
@@ -247,10 +252,12 @@ void process (char * event) {
 		}
 		char * host_name = (char *) calloc (128, sizeof (char));
 
-		if (!strcmp (keyVal, "src") || !strcmp (keyVal, "dst")) {
-			if (rdns (valueVal, host_name)) {
-				add_enrich ("target_name", strlen ("target_name"), host_name,
-				            strlen (host_name));
+		if (resolve_names) {
+			if (!strcmp (keyVal, "src") || !strcmp (keyVal, "dst")) {
+				if (rdns (valueVal, host_name)) {
+					add_enrich ("target_name", strlen ("target_name"), host_name,
+					            strlen (host_name));
+				}
 			}
 		}
 
@@ -297,6 +304,8 @@ void end_process() {
 	struct keyval_t_list * enrichment_aux = NULL;
 	struct keyval_t_list * enrichment_free = NULL;
 	int enriched = 0;
+
+	event_putc (&processed_event, '{');
 
 	while (current_event_aux != NULL) {
 		add_key (&processed_event, current_event_aux->key_val->key,
@@ -362,17 +371,17 @@ void end_process() {
 		free (enrichment_free);
 	}
 
+	event_putc (&processed_event, '}');
 	event_putc (&processed_event, '\n');
 	event_putc (&processed_event, '\0');
-	// printf ("%s\n", processed_event.str);
 	fwrite (processed_event.str, sizeof (char), processed_event.length - 1,
-	        output);
+	        output_file);
 
 	current_event = NULL;
 	enrichment = NULL;
 	free (processed_event.str);
 }
 
-void close_output() {
-	fclose (output);
+void close_file () {
+	fclose (output_file);
 }
