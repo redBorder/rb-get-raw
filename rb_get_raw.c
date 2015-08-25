@@ -36,8 +36,8 @@ static int s_streamReformat = 0;
 static uint on_event = 0;
 static char * last_element = NULL;
 static char * output_filename = NULL;
-struct tm end_time_tm = {0};
-struct tm start_time_tm = {0};
+static time_t end_time_s = 0;
+static time_t start_time_s = 0;
 
 static yajl_handle hand;
 static yajl_gen g;
@@ -47,15 +47,15 @@ char * source = NULL;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-int get_time (const char * p_time, struct tm *my_tm) {
-	struct tm *aux = NULL;
+int get_time (const char * p_time, time_t * my_tm) {
+	struct tm aux = {0};
+
 	int rc = sscanf (p_time, "%d-%d-%dT%d:%d:%d",
-	                 &my_tm->tm_year, &my_tm->tm_mon, &my_tm->tm_mday,
-	                 &my_tm->tm_hour, &my_tm->tm_min, &my_tm->tm_sec);
+	                 &aux.tm_year, &aux.tm_mon, &aux.tm_mday,
+	                 &aux.tm_hour, &aux.tm_min, &aux.tm_sec);
 
 	if ( rc == 1) {
-		aux = gmtime ((const time_t *) &my_tm->tm_year);
-		memcpy (my_tm, aux, sizeof (*aux));
+		*my_tm = aux.tm_year;
 		return 0;
 	}
 
@@ -63,7 +63,7 @@ int get_time (const char * p_time, struct tm *my_tm) {
 		return 1;
 	}
 
-	my_tm->tm_year -= 1900;
+	*my_tm = mktime (&aux);
 
 	return 0;
 }
@@ -205,8 +205,7 @@ void rb_get_raw_getopts (int argc, char* argv[]) {
 	int index;
 	int c;
 
-	time_t now = time (NULL);
-	end_time_tm = * (gmtime (&now));
+	end_time_s = time (NULL);
 
 	opterr = 0;
 	while ((c = getopt (argc, argv, "o:d:s:e:")) != -1)
@@ -219,10 +218,10 @@ void rb_get_raw_getopts (int argc, char* argv[]) {
 			source = optarg;
 			break;
 		case 's':
-			get_time (optarg, &start_time_tm);
+			get_time (optarg, &start_time_s);
 			break;
 		case 'e':
-			get_time (optarg, &end_time_tm);
+			get_time (optarg, &end_time_s);
 			break;
 		case '?':
 			return;
@@ -230,7 +229,7 @@ void rb_get_raw_getopts (int argc, char* argv[]) {
 			abort ();
 		}
 
-	if (start_time_tm.tm_year == 0 ) {
+	if (start_time_s == 0 ) {
 		printf ("Invalid start time\n");
 		rb_get_raw_print_usage();
 		exit (1);
@@ -255,8 +254,8 @@ int main (int argc, char * argv[]) {
 	load_file ();
 
 	char _start[BUFSIZ], _end[BUFSIZ];
-	strftime (_start, sizeof (_start), "%c", &start_time_tm);
-	strftime (_end, sizeof (_end), "%c", &end_time_tm);
+	strftime (_start, sizeof (_start), "%c", gmtime (&start_time_s));
+	strftime (_end, sizeof (_end), "%c", gmtime (&end_time_s));
 
 	printf ("INTERVAL: %s - %s\n", _start, _end);
 
