@@ -245,21 +245,13 @@ void process (char * event) {
 				}
 			}
 		}
+		char * host_name = (char *) calloc (128, sizeof (char));
 
-		if (!strcmp ("direction", keyVal)) {
-			if (!strcmp ("ingress", valueVal)) {
-				direction = 1;
-			} else {
-				direction = 0;
+		if (!strcmp (keyVal, "src") || !strcmp (keyVal, "dst")) {
+			if (rdns (valueVal, host_name)) {
+				add_enrich ("target_name", strlen ("target_name"), host_name,
+				            strlen (host_name));
 			}
-		}
-
-		if (!strcmp ("src", keyVal)) {
-			src_addrr = valueVal;
-		}
-
-		if (!strcmp ("dst", keyVal)) {
-			dst_addrr = valueVal;
 		}
 
 		struct keyval_t_list * current_event_aux = NULL;
@@ -299,29 +291,12 @@ int eventos = 0;
 
 void end_process() {
 
-	char * host_name = (char *) calloc (128, sizeof (char));
 	struct event_t processed_event = {NULL, 0, 0};
 	struct keyval_t_list * current_event_aux  = current_event;
 	struct keyval_t_list * current_event_free  = current_event;
 	struct keyval_t_list * enrichment_aux = NULL;
 	struct keyval_t_list * enrichment_free = NULL;
 	int enriched = 0;
-
-	if (direction) {
-		if (rdns (dst_addrr, strlen (dst_addrr), host_name)) {
-			add_enrich ("dst_net_name",
-			            strlen ("dst_net_name"),
-			            host_name,
-			            strlen (host_name));
-		}
-	} else {
-		if (rdns (src_addrr, strlen (src_addrr), host_name)) {
-			add_enrich ("src_net_name",
-			            strlen ("src_net_name"),
-			            host_name,
-			            strlen (host_name));
-		}
-	}
 
 	while (current_event_aux != NULL) {
 		add_key (&processed_event, current_event_aux->key_val->key,

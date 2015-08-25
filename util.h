@@ -32,7 +32,7 @@ void add_number (struct event_t * event, char * new_number,
                  size_t len);
 void add_string (struct event_t * event, char * new_string, size_t len);
 void add_null (struct event_t * event);
-int rdns (char * string_val, size_t string_len, char * host);
+int rdns (char * string_val, char * host);
 void add_cache (char * ip, char * name);
 char * get_cache (char * ip);
 #endif

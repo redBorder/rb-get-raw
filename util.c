@@ -106,6 +106,7 @@ int IsPrivateAddress (char * ip_addr) {
 struct dns_info_t {
 	char * ip;
 	char * name;
+	// TODO name len
 };
 
 void dns_cb (struct dns_ctx * ctx,
@@ -119,22 +120,24 @@ void dns_cb (struct dns_ctx * ctx,
 
 	dns_done = 1;
 	if (result != NULL  ) {
-		//strncpy (opaque, result->dnsptr_ptr[0], strlen (he->h_name));
-		//add_cache (ip, he->h_name);
+		// calloc
+		// free result
+		// strncpy (opaque, result->dnsptr_ptr[0], strlen (result->dnsptr_ptr[0]));
+		// add_cache (dns_info->ip, result->dnsptr_ptr[0]);
 	} else {
 		// add_cache (ip, "null");
 	}
 }
 
-int rdns (char * string_val, size_t string_len, char * host) {
+int rdns (char * string_val, char * host) {
 	struct in_addr ipv4addr;
 	int ret = 0;
 	char * cached_host = NULL;
 	struct dns_info_t * dns_info = (struct dns_info_t *) calloc (1,
 	                               sizeof (struct dns_info_t));
 
-	char * ip = (char *)calloc (string_len, sizeof (char));
-	strncpy (ip, string_val, string_len);
+	char * ip = (char *)calloc (strlen (string_val), sizeof (char));
+	strncpy (ip, string_val, strlen (string_val));
 
 	dns_info->ip = ip;
 
@@ -154,6 +157,7 @@ int rdns (char * string_val, size_t string_len, char * host) {
 			} else {
 				dns_done = 0;
 				dns_submit_a4ptr (&dns_defctx, &ipv4addr, dns_cb, dns_info);
+
 				while (!dns_done) {
 					time_t now = time (NULL);
 					dns_ioevent (&dns_defctx, now);
