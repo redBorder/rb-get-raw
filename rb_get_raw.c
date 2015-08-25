@@ -24,6 +24,7 @@
 #include <curl/curl.h>
 #include <udns.h>
 #include <getopt.h>
+#include <time.h>
 
 #include "enrichment.h"
 
@@ -35,6 +36,8 @@ static int s_streamReformat = 0;
 static uint on_event = 0;
 static char * last_element = NULL;
 static char * output_filename = NULL;
+static char * start_time = NULL;
+static char * end_time = NULL;
 
 static yajl_handle hand;
 static yajl_gen g;
@@ -43,6 +46,25 @@ int file_flag = 0;
 char * source = NULL;
 
 ////////////////////////////////////////////////////////////////////////////////
+
+int get_time (const char * p_time, struct tm *my_tm) {
+	int rc = sscanf (p_time, "%d-%d-%dT%d:%d:%d",
+	                 &my_tm->tm_year, &my_tm->tm_mon, &my_tm->tm_mday,
+	                 &my_tm->tm_hour, &my_tm->tm_min, &my_tm->tm_sec);
+
+	if ( rc == 1) {
+		// TODO Convierto a ISO
+	}
+
+	if (rc != 6 ) {
+		return 1;
+	}
+
+	my_tm->tm_year -= 1900;
+
+	return 0;
+}
+
 #define GEN_AND_RETURN(func)                                          \
   {                                                                   \
     yajl_gen_status __stat = func;                                    \
@@ -145,13 +167,12 @@ static size_t WriteMemoryCallback (void *contents, size_t size, size_t nmemb,
 
 void rb_get_raw_getopts (int argc, char* argv[]) {
 
-	int bflag = 0;
 	char *cvalue = NULL;
 	int index;
 	int c;
 
 	opterr = 0;
-	while ((c = getopt (argc, argv, "o:d:")) != -1)
+	while ((c = getopt (argc, argv, "o:d:s:e:")) != -1)
 		switch (c) {
 		case 'o':
 			file_flag = 1;
@@ -160,8 +181,11 @@ void rb_get_raw_getopts (int argc, char* argv[]) {
 		case 'd':
 			source = optarg;
 			break;
-		case 'c':
-			cvalue = optarg;
+		case 's':
+			start_time = optarg;
+			break;
+		case 'e':
+			end_time = optarg;
 			break;
 		case '?':
 			if (optopt == 'c')
@@ -227,6 +251,21 @@ int main (int argc, char * argv[]) {
 
 	load_file ();
 
+	struct tm my_tm = {0, 0, 0, 0, 0, 0};
+
+	if (!get_time (start_time, &my_tm)) {
+		printf ("HORA %d\n", my_tm.tm_hour);
+		printf ("YEAR %d\n", my_tm.tm_year);
+		printf ("DIA %d\n", my_tm.tm_mday);
+		printf ("MINUTO %d\n", my_tm.tm_min);
+	}
+
+
+	if (!get_time (end_time, &my_tm)) {
+		printf ("HORA %d\n", my_tm.tm_hour);
+		printf ("MINUTO %d\n", my_tm.tm_min);
+	}
+
 	CURL *curl_handle;
 	CURLcode res;
 	g = yajl_gen_alloc (NULL);
@@ -272,4 +311,3 @@ int main (int argc, char * argv[]) {
 
 	return retval;
 }
-
