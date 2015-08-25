@@ -48,12 +48,15 @@ char * source = NULL;
 ////////////////////////////////////////////////////////////////////////////////
 
 int get_time (const char * p_time, struct tm *my_tm) {
+	struct tm *aux = NULL;
 	int rc = sscanf (p_time, "%d-%d-%dT%d:%d:%d",
 	                 &my_tm->tm_year, &my_tm->tm_mon, &my_tm->tm_mday,
 	                 &my_tm->tm_hour, &my_tm->tm_min, &my_tm->tm_sec);
 
 	if ( rc == 1) {
-		// TODO Convierto a ISO
+		aux = gmtime ((const time_t *) &my_tm->tm_year);
+		memcpy (my_tm, aux, sizeof (*aux));
+		return 0;
 	}
 
 	if (rc != 6 ) {
@@ -250,21 +253,6 @@ int main (int argc, char * argv[]) {
 	}
 
 	load_file ();
-
-	struct tm my_tm = {0, 0, 0, 0, 0, 0};
-
-	if (!get_time (start_time, &my_tm)) {
-		printf ("HORA %d\n", my_tm.tm_hour);
-		printf ("YEAR %d\n", my_tm.tm_year);
-		printf ("DIA %d\n", my_tm.tm_mday);
-		printf ("MINUTO %d\n", my_tm.tm_min);
-	}
-
-
-	if (!get_time (end_time, &my_tm)) {
-		printf ("HORA %d\n", my_tm.tm_hour);
-		printf ("MINUTO %d\n", my_tm.tm_min);
-	}
 
 	CURL *curl_handle;
 	CURLcode res;
