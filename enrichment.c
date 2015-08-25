@@ -295,7 +295,6 @@ void process (char * event, int resolve_names) {
 		current_event_aux->key_val->val = valueVal;
 		current_event_aux->key_val->type = type;
 		current_event_aux->key_val->is_first_key = is_first_key;
-		is_first_key = 0;
 	}
 	end_process();
 }
@@ -304,88 +303,101 @@ int eventos = 0;
 
 void end_process() {
 
-	struct event_t processed_event = {NULL, 0, 0};
-	struct keyval_t_list * current_event_aux  = current_event;
-	struct keyval_t_list * current_event_free  = current_event;
-	struct keyval_t_list * enrichment_aux = NULL;
-	struct keyval_t_list * enrichment_free = NULL;
-	int enriched = 0;
+    struct event_t processed_event = {NULL, 0, 0};
+    struct keyval_t_list * current_event_aux  = current_event;
+    struct keyval_t_list * current_event_free  = current_event;
+    struct keyval_t_list * enrichment_aux = NULL;
+    struct keyval_t_list * enrichment_free = NULL;
+    int enriched = 0;
 
-	event_putc (&processed_event, '{');
+    event_putc (&processed_event, '{');
+    int is_first_key = 1;
 
-	while (current_event_aux != NULL) {
-		add_key (&processed_event, current_event_aux->key_val->key,
-		         strlen (current_event_aux->key_val->key),
-		         current_event_aux->key_val->is_first_key);
+    while (current_event_aux != NULL) {
 
-		enrichment_aux = enrichment;
 
-		while (enrichment_aux != NULL) {
-			if (!strncmp (current_event_aux->key_val->key, enrichment_aux->key_val->key,
-			              strlen (enrichment_aux->key_val->key)) && enrich) {
-				add_string (&processed_event, enrichment_aux->key_val->val,
-				            strlen (enrichment_aux->key_val->val));
-				enrichment_aux->key_val->enriched = 1;
-				enriched++;
-				break;
-			}
+        enrichment_aux = enrichment;
 
-			enrichment_aux = enrichment_aux->next;
-		}
+        while (enrichment_aux != NULL) {
+            if (!strncmp (current_event_aux->key_val->key, enrichment_aux->key_val->key,
+                          strlen (enrichment_aux->key_val->key)) && enrich) {
+                add_key (&processed_event, current_event_aux->key_val->key,
+                         strlen (current_event_aux->key_val->key),
+                         is_first_key);
+                add_string (&processed_event, enrichment_aux->key_val->val,
+                            strlen (enrichment_aux->key_val->val));
+                enrichment_aux->key_val->enriched = 1;
+                enriched++;
+                is_first_key = 0;
+                break;
+            }
 
-		if (!enriched) {
-			switch (current_event_aux->key_val->type) {
-			case 1:
-				add_string (&processed_event, current_event_aux->key_val->val,
-				            strlen (current_event_aux->key_val->val));
-				break;
-			case 2:
-				add_number (&processed_event, current_event_aux->key_val->val,
-				            strlen (current_event_aux->key_val->val));
-				break;
-			case 3:
-				add_null (&processed_event);
-				break;
-			}
-		}
+            enrichment_aux = enrichment_aux->next;
+        }
 
-		enriched = 0;
-		current_event_free = current_event_aux;
-		current_event_aux = current_event_aux->next;
-		free (current_event_free->key_val);
-		free (current_event_free);
-	};
+        if (!enriched) {
+            switch (current_event_aux->key_val->type) {
+            case 1:
+                add_key (&processed_event, current_event_aux->key_val->key,
+                         strlen (current_event_aux->key_val->key),
+                         is_first_key);
+                add_string (&processed_event, current_event_aux->key_val->val,
+                            strlen (current_event_aux->key_val->val));
+                is_first_key = 0;
 
-	enrichment_aux = enrichment;
+                break;
+            case 2:
+                add_key (&processed_event, current_event_aux->key_val->key,
+                         strlen (current_event_aux->key_val->key),
+                         is_first_key);
+                add_number (&processed_event, current_event_aux->key_val->val,
+                            strlen (current_event_aux->key_val->val));
+                is_first_key = 0;
 
-	while (enrichment_aux != NULL) {
+                break;
+            case 3:
+                //add_null (&processed_event);
+                break;
+            }
+        }
 
-		if (enrichment_aux->key_val->enriched == 0 && enrich) {
-			add_key (&processed_event, enrichment_aux->key_val->key,
-			         strlen (enrichment_aux->key_val->key), 0);
-			add_string (&processed_event, enrichment_aux->key_val->val,
-			            strlen (enrichment_aux->key_val->val));
-		}
+        enriched = 0;
+        current_event_free = current_event_aux;
+        current_event_aux = current_event_aux->next;
+        free (current_event_free->key_val);
+        free (current_event_free);
+    };
 
-		enrichment_aux = enrichment_aux->next;
-	}
+    enrichment_aux = enrichment;
 
-	while (enrichment != NULL) {
-		enrichment_free = enrichment;
-		enrichment = enrichment->next;
-		free (enrichment_free->key_val);
-		free (enrichment_free);
-	}
+    while (enrichment_aux != NULL) {
 
-	event_putc (&processed_event, '}');
-	event_putc (&processed_event, '\n');
-	event_putc (&processed_event, '\0');
-	fwrite (processed_event.str, sizeof (char), processed_event.length - 1,
-	        output_file);
+        if (enrichment_aux->key_val->enriched == 0 && enrich) {
+            add_key (&processed_event, enrichment_aux->key_val->key,
+                     strlen (enrichment_aux->key_val->key), 0);
+            add_string (&processed_event, enrichment_aux->key_val->val,
+                        strlen (enrichment_aux->key_val->val));
+        }
 
-	current_event = NULL;
-	enrichment = NULL;
-	free (processed_event.str);
+        enrichment_aux = enrichment_aux->next;
+    }
+
+    while (enrichment != NULL) {
+        enrichment_free = enrichment;
+        enrichment = enrichment->next;
+        free (enrichment_free->key_val);
+        free (enrichment_free);
+    }
+
+event_putc (&processed_event, '}');
+event_putc (&processed_event, '\n');
+event_putc (&processed_event, '\0');
+fwrite (processed_event.str, sizeof (char), processed_event.length - 1,
+	output_file);
+
+current_event = NULL;
+enrichment = NULL;
+free (processed_event.str);
 }
 
 void close_file () {
