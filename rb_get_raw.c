@@ -41,6 +41,8 @@ static time_t start_time_s = 0;
 static int interval = 1;
 static yajl_handle hand;
 static yajl_gen g;
+static int granularity = 1;
+static int resolve_names = 0;
 
 int file_flag = 0;
 char * source = NULL;
@@ -134,7 +136,7 @@ static int reformat_end_map (void * ctx) {
 	if (on_event) {
 		yajl_gen_get_buf (g, (const unsigned char **)&event, &aux_size);
 		on_event = 0;
-		process ((char *)event + 1);
+		process ((char *)event + 1, resolve_names);
 	}
 
 	GEN_AND_RETURN (rc);
@@ -180,6 +182,7 @@ void rb_get_raw_print_usage() {
 	    "\t -i [OPTIONAL]\t time interval in minutes, default 1 minute.\n"
 	    "\t -g [OPTIONAL]\t granularity in minutes, default 1 minute.\n"
 	    "\t -o [OPTIONAL]\t output file instead of stdout\n"
+	    "\t -n [OPTIONAL]\t resolve host names\n"
 	    "\t\t\t The format of the content file is:\n"
 	    "\n"
 	    "-------------------------------------\n"
@@ -201,14 +204,12 @@ void rb_get_raw_print_usage() {
 
 void rb_get_raw_getopts (int argc, char* argv[]) {
 
-	char *cvalue = NULL;
-	int index;
 	int c;
 
 	end_time_s = time (NULL);
 
 	opterr = 0;
-	while ((c = getopt (argc, argv, "o:d:s:e:i:?")) != -1)
+	while ((c = getopt (argc, argv, "no:d:s:e:i:g:?")) != -1)
 		switch (c) {
 		case 'o':
 			file_flag = 1;
@@ -226,6 +227,12 @@ void rb_get_raw_getopts (int argc, char* argv[]) {
 		case 'i':
 			interval = atoi (optarg);
 			break;
+		case 'g':
+			granularity = atoi (optarg);
+			break;
+		case 'n':
+			resolve_names = 1;
+			break;
 		case '?':
 			return;
 		default:
@@ -238,7 +245,53 @@ void rb_get_raw_getopts (int argc, char* argv[]) {
 		exit (1);
 	}
 
-	printf ("%d\n\n", interval);
+	if (source == NULL) {
+		printf ("Invalid source\n");
+		exit (1);
+	}
+
+	if (granularity < interval) {
+		granularity = interval;
+	}
+}
+
+int gen_query0 (char *dst, size_t dst_sz, char * start_interval_str,
+                char * end_interval_str) {
+
+	return snprintf (dst, dst_sz, "{"
+	                 "\"dataSource\": \"%s\","
+	                 "\"granularity\": {"
+	                 "\"type\": \"duration\","
+	                 "\"duration\": %d"
+	                 "},"
+	                 "\"intervals\": [\"%s+00:00/%s+00:00\"],"
+	                 "\"queryType\": \"groupBy\","
+	                 "\"dimensions\": [\"application_id_name\",\"biflow_direction\", \"conversation\", \"direction\", \"engine_id_name\", \"http_user_agent_os\", \"http_host\", \"http_social_media\", \"http_social_user\", \"http_referer_l1\", \"l4_proto\", \"ip_protocol_version\", \"sensor_name\", \"sensor_uuid\", \"scatterplot\", \"src\", \"src_country_code\", \"src_net_name\", \"src_port\", \"src_as_name\", \"client_id\", \"client_mac\", \"client_mac_vendor\", \"dot11_status\", \"src_vlan\", \"src_map\", \"srv_port\", \"dst\", \"dst_country_code\", \"dst_net_name\", \"dst_port\", \"dst_as_name\", \"dst_vlan\", \"dst_map\", \"input_snmp\", \"output_snmp\", \"input_vrf\", \"output_vrf\", \"tos\", \"client_latlong\", \"coordinates_map\", \"deployment\", \"deployment_uuid\", \"namespace\", \"namespace_uuid\", \"campus\", \"campus_uuid\", \"building\", \"building_uuid\", \"floor\", \"floor_uuid\", \"zone\", \"zone_uuid\", \"wireless_uuid\", \"client_rssi\", \"client_rssi_num\", \"client_snr\", \"client_snr_num\", \"wireless_station\", \"hnblocation\", \"hnbgeolocation\", \"rat\", \"darklist_score_name\", \"darklist_category\", \"darklist_protocol\", \"darklist_direction\", \"darklist_score\", \"market\", \"market_uuid\", \"organization\", \"organization_uuid\", \"dot11_protocol\", \"type\", \"duration\"],"
+	                 "\"aggregations\": [{"
+	                 "\"type\": \"longSum\","
+	                 "\"name\": \"pkts\","
+	                 "\"fieldName\": \"sum_pkts\""
+	                 "}, {"
+	                 "\"type\": \"longSum\","
+	                 "\"name\": \"bytes\","
+	                 "\"fieldName\": \"sum_bytes\""
+	                 "}]"
+	                 "}",
+	                 source,
+	                 granularity,
+	                 start_interval_str,
+	                 end_interval_str);
+}
+
+char *gen_query (char * start_interval_str,
+                 char * end_interval_str) {
+	const int dst_sz = gen_query0 (NULL, 0, start_interval_str, end_interval_str);
+	// TODO error treatment
+
+	char * ret = calloc (dst_sz + 1, 1);
+	// TODO error treatment
+	gen_query0 (ret, dst_sz + 1, start_interval_str, end_interval_str);
+	return ret;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -246,7 +299,6 @@ int main (int argc, char * argv[]) {
 
 	dns_init (&dns_defctx, 1);
 	int retval = 0;
-
 
 	rb_get_raw_getopts (argc, argv);
 
@@ -262,63 +314,68 @@ int main (int argc, char * argv[]) {
 	time_t end_interval_s = 0;
 	time_t start_interval_s = 0;
 	start_interval_s = start_time_s;
+	char * query = NULL;
 
+	CURL *curl_handle;
+	CURLcode res;
+
+	curl_global_init (CURL_GLOBAL_ALL);
 
 	while (end_time_s > end_interval_s) {
+
+		g = yajl_gen_alloc (NULL);
+		yajl_gen_config (g, yajl_gen_beautify, 0);
+		yajl_gen_config (g, yajl_gen_validate_utf8, 1);
+
+		hand = yajl_alloc (&callbacks, NULL, (void *) g);
+		yajl_config (hand, yajl_allow_comments, 1);
+
 		if (start_interval_s + interval_s > end_time_s) {
 			end_interval_s = end_time_s;
 		} else {
 			end_interval_s = start_interval_s + interval_s;
 		}
 
-		char _start[BUFSIZ], _end[BUFSIZ];
-		strftime (_start, sizeof (_start), "%c", gmtime (&start_interval_s));
-		strftime (_end, sizeof (_end), "%c", gmtime (&end_interval_s));
+		char start_interval_str[BUFSIZ], end_interval_str[BUFSIZ];
+		strftime (start_interval_str, sizeof (start_interval_str), "%FT%R:00",
+		          gmtime (&start_interval_s));
+		strftime (end_interval_str, sizeof (end_interval_str), "%FT%R:00",
+		          gmtime (&end_interval_s));
 
-		printf ("INTERVAL: %s - %s\n", _start, _end);
+		query = gen_query (start_interval_str, end_interval_str);
+		printf ("Getting data from druid [ %s/%s ]\n", start_interval_str,
+		        end_interval_str);
+		curl_handle = curl_easy_init();
 
+		curl_easy_setopt (curl_handle, CURLOPT_URL,
+		                  "http://10.0.150.23:8080/druid/v2/?pretty=true");
+
+		struct curl_slist * headers = NULL;
+		headers = curl_slist_append (headers, "Accept: application/json");
+		headers = curl_slist_append (headers,
+		                             "Content-Type: application/json");
+		headers = curl_slist_append (headers, "charsets: utf-8");
+		curl_easy_setopt (curl_handle, CURLOPT_HTTPHEADER, headers);
+
+		curl_easy_setopt (curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+
+		curl_easy_setopt (curl_handle, CURLOPT_POSTFIELDS, query);
+		res = curl_easy_perform (curl_handle);
+
+		if (res != CURLE_OK) {
+			fprintf (stderr, "curl_easy_perform() failed: %s\n",
+			         curl_easy_strerror (res));
+		}
+
+		curl_easy_cleanup (curl_handle);
 		start_interval_s += interval_s;
+		free (query);
+		yajl_gen_free (g);
+		yajl_free (hand);
 	}
 
-
-	CURL *curl_handle;
-	CURLcode res;
-	g = yajl_gen_alloc (NULL);
-	yajl_gen_config (g, yajl_gen_beautify, 0);
-	yajl_gen_config (g, yajl_gen_validate_utf8, 1);
-
-	hand = yajl_alloc (&callbacks, NULL, (void *) g);
-	yajl_config (hand, yajl_allow_comments, 1);
-
-	curl_global_init (CURL_GLOBAL_ALL);
-	curl_handle = curl_easy_init();
-
-	curl_easy_setopt (curl_handle, CURLOPT_URL,
-	                  "http://10.0.150.23:8080/druid/v2/?pretty=true");
-
-	struct curl_slist * headers = NULL;
-	headers = curl_slist_append (headers, "Accept: application/json");
-	headers = curl_slist_append (headers,
-	                             "Content-Type: application/json");
-	headers = curl_slist_append (headers, "charsets: utf-8");
-	curl_easy_setopt (curl_handle, CURLOPT_HTTPHEADER, headers);
-
-	curl_easy_setopt (curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-
-	curl_easy_setopt (curl_handle, CURLOPT_POSTFIELDS,
-	                  "{\"dataSource\":\"rb_flow\",\"granularity\":{\"type\":\"duration\",\"duration\":300000},\"intervals\":[\"2015-08-24T9:00:00+00:00/2015-08-25T12:00:00+00:00\"],\"queryType\":\"groupBy\",\"dimensions\":[\"application_id_name\",\"biflow_direction\",\"conversation\",\"direction\",\"engine_id_name\",\"http_user_agent_os\",\"http_host\",\"http_social_media\",\"http_social_user\",\"http_referer_l1\",\"l4_proto\",\"ip_protocol_version\",\"sensor_name\",\"sensor_uuid\",\"scatterplot\",\"src\",\"src_country_code\",\"src_net_name\",\"src_port\",\"src_as_name\",\"client_id\",\"client_mac\",\"client_mac_vendor\",\"dot11_status\",\"src_vlan\",\"src_map\",\"srv_port\",\"dst\",\"dst_country_code\",\"dst_net_name\",\"dst_port\",\"dst_as_name\",\"dst_vlan\",\"dst_map\",\"input_snmp\",\"output_snmp\",\"input_vrf\",\"output_vrf\",\"tos\",\"client_latlong\",\"coordinates_map\",\"deployment\",\"deployment_uuid\",\"namespace\",\"namespace_uuid\",\"campus\",\"campus_uuid\",\"building\",\"building_uuid\",\"floor\",\"floor_uuid\",\"zone\",\"zone_uuid\",\"wireless_uuid\",\"client_rssi\",\"client_rssi_num\",\"client_snr\",\"client_snr_num\",\"wireless_station\",\"hnblocation\",\"hnbgeolocation\",\"rat\",\"darklist_score_name\",\"darklist_category\",\"darklist_protocol\",\"darklist_direction\",\"darklist_score\",\"market\",\"market_uuid\",\"organization\",\"organization_uuid\",\"dot11_protocol\",\"type\",\"duration\"],\"aggregations\":[{\"type\":\"longSum\",\"name\":\"events\",\"fieldName\":\"events\"},{\"type\":\"longSum\",\"name\":\"pkts\",\"fieldName\":\"sum_pkts\"},{\"type\":\"longSum\",\"name\":\"bytes\",\"fieldName\":\"sum_bytes\"}]}");
-
-	res = curl_easy_perform (curl_handle);
-
-	if (res != CURLE_OK) {
-		fprintf (stderr, "curl_easy_perform() failed: %s\n",
-		         curl_easy_strerror (res));
-	}
-
-	curl_easy_cleanup (curl_handle);
 	curl_global_cleanup();
-	yajl_gen_free (g);
-	yajl_free (hand);
+
 
 	if (file_flag == 1) {
 		close_file();

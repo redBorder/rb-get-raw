@@ -187,7 +187,7 @@ char * dst_addrr = NULL;
 size_t dst_addrr_len = 0;
 int direction = 0;
 
-void process (char * event) {
+void process (char * event, int resolve_names) {
 
 	char errbuf[BUFSIZ];
 	yajl_val node = yajl_tree_parse ((const char *) event, errbuf, sizeof (errbuf));
@@ -252,10 +252,12 @@ void process (char * event) {
 		}
 		char * host_name = (char *) calloc (128, sizeof (char));
 
-		if (!strcmp (keyVal, "src") || !strcmp (keyVal, "dst")) {
-			if (rdns (valueVal, host_name)) {
-				add_enrich ("target_name", strlen ("target_name"), host_name,
-				            strlen (host_name));
+		if (resolve_names) {
+			if (!strcmp (keyVal, "src") || !strcmp (keyVal, "dst")) {
+				if (rdns (valueVal, host_name)) {
+					add_enrich ("target_name", strlen ("target_name"), host_name,
+					            strlen (host_name));
+				}
 			}
 		}
 
@@ -302,6 +304,8 @@ void end_process() {
 	struct keyval_t_list * enrichment_aux = NULL;
 	struct keyval_t_list * enrichment_free = NULL;
 	int enriched = 0;
+
+	event_putc (&processed_event, '{');
 
 	while (current_event_aux != NULL) {
 		add_key (&processed_event, current_event_aux->key_val->key,
@@ -367,6 +371,7 @@ void end_process() {
 		free (enrichment_free);
 	}
 
+	event_putc (&processed_event, '}');
 	event_putc (&processed_event, '\n');
 	event_putc (&processed_event, '\0');
 	fwrite (processed_event.str, sizeof (char), processed_event.length - 1,
