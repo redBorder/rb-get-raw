@@ -23,6 +23,7 @@
 #include <string.h>
 #include <curl/curl.h>
 #include <udns.h>
+#include <getopt.h>
 
 #include "enrichment.h"
 
@@ -32,11 +33,13 @@
 
 static int s_streamReformat = 0;
 static uint on_event = 0;
-static FILE * output = NULL;
 static char * last_element = NULL;
+static char * output_filename = NULL;
 
 static yajl_handle hand;
 static yajl_gen g;
+
+int file_flag = 0;
 
 ////////////////////////////////////////////////////////////////////////////////
 #define GEN_AND_RETURN(func)                                          \
@@ -105,7 +108,6 @@ static int reformat_end_map (void * ctx) {
 	if (on_event) {
 		yajl_gen_get_buf (g, (const unsigned char **)&event, &aux_size);
 		on_event = 0;
-		// printf ("%s\n\n", event + 1);
 		process ((char *)event + 1);
 	}
 
@@ -133,71 +135,141 @@ static yajl_callbacks callbacks = {
 	reformat_end_array
 };
 
-static size_t
-WriteMemoryCallback (void *contents, size_t size, size_t nmemb, void *userp) {
+static size_t WriteMemoryCallback (void *contents, size_t size, size_t nmemb,
+                                   void *userp) {
 	size_t realsize = size * nmemb;
-
-	//memcpy (fileData, contents + fileData_pos, realsize);
-
-	//printf ("%d\n",  printbuf_length (&p));
 	yajl_parse (hand, (const unsigned char *) contents, realsize);
-
 	return realsize;
 }
 
+void rb_get_raw_getopts (int argc, char* argv[]) {
+
+	int bflag = 0;
+	char *cvalue = NULL;
+	int index;
+	int c;
+
+	opterr = 0;
+	while ((c = getopt (argc, argv, "o:")) != -1)
+		switch (c) {
+		case 'o':
+			file_flag = 1;
+			output_filename = (char *) getopt;
+			break;
+		case 'b':
+			bflag = 1;
+			break;
+		case 'c':
+			cvalue = optarg;
+			break;
+		case '?':
+			if (optopt == 'c')
+				fprintf (stderr, "Option -%c requires an argument.\n", optopt);
+			else if (isprint (optopt))
+				fprintf (stderr, "Unknown option `-%c'.\n", optopt);
+			else
+				fprintf (stderr,
+				         "Unknown option character `\\x%x'.\n",
+				         optopt);
+			return;
+		default:
+			abort ();
+		}
+	for (index = optind; index < argc; index++)
+		printf ("Non-option argument %s\n", argv[index]);
+}
+
+void rb_get_raw_print_usage() {
+	printf (
+	    "Usage: rb_get_raw.rb -d data_source -s start_timestamp [-e end_timestamp] [-f enrichment_file_path]\n"
+	    "Get enrichment data from Druid in json format.\n"
+	    "Options:\n"
+	    "\t -d\t\t select data source target to fetch data. Available data sources: rb_flow, rb_event, rb_monitor.\n"
+	    "\t -s\t\t start time in unix or ISO format.\n"
+	    "\t -e [OPTIONAL]\t end time in unix or ISO format. Default value is the current timestamp.\n"
+	    "\t -f [OPTIONAL]\t absolute path of file used to enrich data.\n"
+	    "\t -i [OPTIONAL]\t time interval in minutes, default 1 minute.\n"
+	    "\t -g [OPTIONAL]\t granularity in minutes, default 1 minute.\n"
+	    "\t -o [OPTIONAL]\t output file instead of stdout\n"
+	    "\t\t\t The format of the content file is:\n"
+	    "\n"
+	    "-------------------------------------\n"
+	    "Enrichment File Format:\n"
+	    "-------------------------------------\n"
+	    "sensor_name:\n"
+	    "  'ASR':\n"
+	    "    sensor_uuid: '7553351737517864910'\n"
+	    "  'ISG':\n"
+	    "    sensor_uuid: '1771993440671112867'\n"
+	    "wireless_station:\n"
+	    "  '22:22:22:22:22:22':\n"
+	    "    floor_uuid: '1207968231979495976'\n"
+	    "    building_uuid: '4137496452293841175'\n"
+	    "    dot11_status: 'CONNECTED'\n"
+	    "\n"
+	);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
-int main () {
+int main (int argc, char * argv[]) {
 
 	dns_init (&dns_defctx, 1);
 	int retval = 0;
 
-	if (! (output = fopen ("output", "w"))) {
-		printf ("No se puede abrir fichero de salida\n");
-		exit (1);
+	rb_get_raw_getopts (argc, argv);
+
+
+	if (file_flag == 1) {
+		load_output_file (output_filename);
 	} else {
-		printf ("Abierto fichero de salida\n");
-		load_file (output);
+		load_output_file (NULL);
+	}
 
-		CURL *curl_handle;
-		CURLcode res;
-		g = yajl_gen_alloc (NULL);
-		yajl_gen_config (g, yajl_gen_beautify, 0);
-		yajl_gen_config (g, yajl_gen_validate_utf8, 1);
+	load_file ();
 
-		hand = yajl_alloc (&callbacks, NULL, (void *) g);
-		yajl_config (hand, yajl_allow_comments, 1);
+	CURL *curl_handle;
+	CURLcode res;
+	g = yajl_gen_alloc (NULL);
+	yajl_gen_config (g, yajl_gen_beautify, 0);
+	yajl_gen_config (g, yajl_gen_validate_utf8, 1);
 
-		curl_global_init (CURL_GLOBAL_ALL);
-		curl_handle = curl_easy_init();
+	hand = yajl_alloc (&callbacks, NULL, (void *) g);
+	yajl_config (hand, yajl_allow_comments, 1);
 
-		curl_easy_setopt (curl_handle, CURLOPT_URL,
-		                  "http://10.0.150.23:8080/druid/v2/?pretty=true");
+	curl_global_init (CURL_GLOBAL_ALL);
+	curl_handle = curl_easy_init();
 
-		struct curl_slist * headers = NULL;
-		headers = curl_slist_append (headers, "Accept: application/json");
-		headers = curl_slist_append (headers,
-		                             "Content-Type: application/json");
-		headers = curl_slist_append (headers, "charsets: utf-8");
-		curl_easy_setopt (curl_handle, CURLOPT_HTTPHEADER, headers);
+	curl_easy_setopt (curl_handle, CURLOPT_URL,
+	                  "http://10.0.150.23:8080/druid/v2/?pretty=true");
 
-		curl_easy_setopt (curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+	struct curl_slist * headers = NULL;
+	headers = curl_slist_append (headers, "Accept: application/json");
+	headers = curl_slist_append (headers,
+	                             "Content-Type: application/json");
+	headers = curl_slist_append (headers, "charsets: utf-8");
+	curl_easy_setopt (curl_handle, CURLOPT_HTTPHEADER, headers);
 
-		curl_easy_setopt (curl_handle, CURLOPT_POSTFIELDS,
-		                  "{\"dataSource\":\"rb_flow\",\"granularity\":{\"type\":\"duration\",\"duration\":300000},\"intervals\":[\"2015-08-24T9:00:00+00:00/2015-08-25T12:00:00+00:00\"],\"queryType\":\"groupBy\",\"dimensions\":[\"application_id_name\",\"biflow_direction\",\"conversation\",\"direction\",\"engine_id_name\",\"http_user_agent_os\",\"http_host\",\"http_social_media\",\"http_social_user\",\"http_referer_l1\",\"l4_proto\",\"ip_protocol_version\",\"sensor_name\",\"sensor_uuid\",\"scatterplot\",\"src\",\"src_country_code\",\"src_net_name\",\"src_port\",\"src_as_name\",\"client_id\",\"client_mac\",\"client_mac_vendor\",\"dot11_status\",\"src_vlan\",\"src_map\",\"srv_port\",\"dst\",\"dst_country_code\",\"dst_net_name\",\"dst_port\",\"dst_as_name\",\"dst_vlan\",\"dst_map\",\"input_snmp\",\"output_snmp\",\"input_vrf\",\"output_vrf\",\"tos\",\"client_latlong\",\"coordinates_map\",\"deployment\",\"deployment_uuid\",\"namespace\",\"namespace_uuid\",\"campus\",\"campus_uuid\",\"building\",\"building_uuid\",\"floor\",\"floor_uuid\",\"zone\",\"zone_uuid\",\"wireless_uuid\",\"client_rssi\",\"client_rssi_num\",\"client_snr\",\"client_snr_num\",\"wireless_station\",\"hnblocation\",\"hnbgeolocation\",\"rat\",\"darklist_score_name\",\"darklist_category\",\"darklist_protocol\",\"darklist_direction\",\"darklist_score\",\"market\",\"market_uuid\",\"organization\",\"organization_uuid\",\"dot11_protocol\",\"type\",\"duration\"],\"aggregations\":[{\"type\":\"longSum\",\"name\":\"events\",\"fieldName\":\"events\"},{\"type\":\"longSum\",\"name\":\"pkts\",\"fieldName\":\"sum_pkts\"},{\"type\":\"longSum\",\"name\":\"bytes\",\"fieldName\":\"sum_bytes\"}]}");
+	curl_easy_setopt (curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
 
-		res = curl_easy_perform (curl_handle);
+	curl_easy_setopt (curl_handle, CURLOPT_POSTFIELDS,
+	                  "{\"dataSource\":\"rb_flow\",\"granularity\":{\"type\":\"duration\",\"duration\":300000},\"intervals\":[\"2015-08-24T9:00:00+00:00/2015-08-25T12:00:00+00:00\"],\"queryType\":\"groupBy\",\"dimensions\":[\"application_id_name\",\"biflow_direction\",\"conversation\",\"direction\",\"engine_id_name\",\"http_user_agent_os\",\"http_host\",\"http_social_media\",\"http_social_user\",\"http_referer_l1\",\"l4_proto\",\"ip_protocol_version\",\"sensor_name\",\"sensor_uuid\",\"scatterplot\",\"src\",\"src_country_code\",\"src_net_name\",\"src_port\",\"src_as_name\",\"client_id\",\"client_mac\",\"client_mac_vendor\",\"dot11_status\",\"src_vlan\",\"src_map\",\"srv_port\",\"dst\",\"dst_country_code\",\"dst_net_name\",\"dst_port\",\"dst_as_name\",\"dst_vlan\",\"dst_map\",\"input_snmp\",\"output_snmp\",\"input_vrf\",\"output_vrf\",\"tos\",\"client_latlong\",\"coordinates_map\",\"deployment\",\"deployment_uuid\",\"namespace\",\"namespace_uuid\",\"campus\",\"campus_uuid\",\"building\",\"building_uuid\",\"floor\",\"floor_uuid\",\"zone\",\"zone_uuid\",\"wireless_uuid\",\"client_rssi\",\"client_rssi_num\",\"client_snr\",\"client_snr_num\",\"wireless_station\",\"hnblocation\",\"hnbgeolocation\",\"rat\",\"darklist_score_name\",\"darklist_category\",\"darklist_protocol\",\"darklist_direction\",\"darklist_score\",\"market\",\"market_uuid\",\"organization\",\"organization_uuid\",\"dot11_protocol\",\"type\",\"duration\"],\"aggregations\":[{\"type\":\"longSum\",\"name\":\"events\",\"fieldName\":\"events\"},{\"type\":\"longSum\",\"name\":\"pkts\",\"fieldName\":\"sum_pkts\"},{\"type\":\"longSum\",\"name\":\"bytes\",\"fieldName\":\"sum_bytes\"}]}");
 
-		if (res != CURLE_OK) {
-			fprintf (stderr, "curl_easy_perform() failed: %s\n",
-			         curl_easy_strerror (res));
-		}
+	res = curl_easy_perform (curl_handle);
 
-		curl_easy_cleanup (curl_handle);
-		curl_global_cleanup();
-		yajl_gen_free (g);
-		yajl_free (hand);
-		fclose (output);
+	if (res != CURLE_OK) {
+		fprintf (stderr, "curl_easy_perform() failed: %s\n",
+		         curl_easy_strerror (res));
+	}
+
+	curl_easy_cleanup (curl_handle);
+	curl_global_cleanup();
+	yajl_gen_free (g);
+	yajl_free (hand);
+
+	if (file_flag == 1) {
+		close_file();
 	}
 
 	return retval;
 }
+
