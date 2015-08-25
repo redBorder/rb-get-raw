@@ -40,6 +40,7 @@ static yajl_handle hand;
 static yajl_gen g;
 
 int file_flag = 0;
+char * source = NULL;
 
 ////////////////////////////////////////////////////////////////////////////////
 #define GEN_AND_RETURN(func)                                          \
@@ -150,14 +151,14 @@ void rb_get_raw_getopts (int argc, char* argv[]) {
 	int c;
 
 	opterr = 0;
-	while ((c = getopt (argc, argv, "o:")) != -1)
+	while ((c = getopt (argc, argv, "o:d:")) != -1)
 		switch (c) {
 		case 'o':
 			file_flag = 1;
-			output_filename = (char *) getopt;
+			output_filename = optarg;
 			break;
-		case 'b':
-			bflag = 1;
+		case 'd':
+			source = optarg;
 			break;
 		case 'c':
 			cvalue = optarg;
@@ -217,7 +218,6 @@ int main (int argc, char * argv[]) {
 	int retval = 0;
 
 	rb_get_raw_getopts (argc, argv);
-
 
 	if (file_flag == 1) {
 		load_output_file (output_filename);
