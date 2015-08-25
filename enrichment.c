@@ -1,6 +1,6 @@
 #include "enrichment.h"
 
-static int enrich = 1;
+static int enrich = 0;
 
 struct keyval_t {
 	int is_first_key;
@@ -49,7 +49,7 @@ int load_output_file (char * output_filename) {
 	return 0;
 }
 
-int load_file () {
+int load_file (char * enrich_filename) {
 
 	static yajl_val node;
 	size_t rd;
@@ -57,89 +57,93 @@ int load_file () {
 	FILE * file = NULL;
 	unsigned char fileData[65536];
 
-	if ( ! (file = fopen ("enrichment.json", "r"))) {
-		printf ("Can't open enrichment file\n");
-		exit (1);
-	}
+	if (enrich_filename != NULL) {
+		if ( ! (file = fopen (enrich_filename, "r"))) {
+			printf ("Can't open enrichment file\n");
+			exit (1);
+		}
+		enrich = 1;
 
 	/* null plug buffers */
-	fileData[0] = errbuf[0] = 0;
+		fileData[0] = errbuf[0] = 0;
 
 	/* read the entire config file */
-	rd = fread ((void *) fileData, 1, sizeof (fileData) - 1, file);
+		rd = fread ((void *) fileData, 1, sizeof (fileData) - 1, file);
 
 	/* file read error handling */
-	if (rd == 0 && !feof (stdin)) {
-		fprintf (stderr, "error encountered on file read\n");
-		return 1;
-	} else if (rd >= sizeof (fileData) - 1) {
-		fprintf (stderr, "config file too big\n");
-		return 1;
-	}
+		if (rd == 0 && !feof (stdin)) {
+			fprintf (stderr, "error encountered on file read\n");
+			return 1;
+		} else if (rd >= sizeof (fileData) - 1) {
+			fprintf (stderr, "config file too big\n");
+			return 1;
+		}
 
 	/* we have the whole config file in memory.  let's parse it ... */
-	node = yajl_tree_parse ((const char *) fileData, errbuf, sizeof (errbuf));
+		node = yajl_tree_parse ((const char *) fileData, errbuf, sizeof (errbuf));
 
 	/* parse error handling */
-	if (node == NULL) {
-		fprintf (stderr, "parse_error: ");
-		if (strlen (errbuf)) fprintf (stderr, " %s", errbuf);
-		else fprintf (stderr, "unknown error");
-		fprintf (stderr, "\n");
-		return 1;
-	}
+		if (node == NULL) {
+			fprintf (stderr, "parse_error: ");
+			if (strlen (errbuf)) fprintf (stderr, " %s", errbuf);
+			else fprintf (stderr, "unknown error");
+			fprintf (stderr, "\n");
+			return 1;
+		}
 
-	int i;
-	int j;
-	int k;
+		int i;
+		int j;
+		int k;
 
 	// Go to the root
-	const char * root_path[] = { (const char *) 0 };
-	yajl_val root = yajl_tree_get (node, root_path, yajl_t_object);
-	props.propperties = (struct propperty_t *) calloc (YAJL_GET_OBJECT (root)->len,
-	                    sizeof (struct propperty_t));
-	props.len = YAJL_GET_OBJECT (root)->len;
+		const char * root_path[] = { (const char *) 0 };
+		yajl_val root = yajl_tree_get (node, root_path, yajl_t_object);
+		props.propperties = (struct propperty_t *) calloc (YAJL_GET_OBJECT (root)->len,
+			sizeof (struct propperty_t));
+		props.len = YAJL_GET_OBJECT (root)->len;
 
 	// Iterate through propperties
-	for (i = 0; i < YAJL_GET_OBJECT (root)->len; i++) {
-		props.propperties[i].name = YAJL_GET_OBJECT (root)->keys[i];
+		for (i = 0; i < YAJL_GET_OBJECT (root)->len; i++) {
+			props.propperties[i].name = YAJL_GET_OBJECT (root)->keys[i];
 		// printf ("%s\n", props.propperties[i].name);
 
 		// Go to the propperty
-		const char * propperty_path[] = { YAJL_GET_OBJECT (root)->keys[i],
-		                                  (const char *) 0
-		                                };
-		yajl_val propperty = yajl_tree_get (root, propperty_path, yajl_t_object);
-		props.propperties[i].targets = (struct target_t *) calloc (YAJL_GET_OBJECT (
-		                                   propperty)->len, sizeof (struct target_t));
+			const char * propperty_path[] = { YAJL_GET_OBJECT (root)->keys[i],
+				(const char *) 0
+			};
+			yajl_val propperty = yajl_tree_get (root, propperty_path, yajl_t_object);
+			props.propperties[i].targets = (struct target_t *) calloc (YAJL_GET_OBJECT (
+				propperty)->len, sizeof (struct target_t));
 
 		// Iterate through targets
-		for (j = 0; j < YAJL_GET_OBJECT (propperty)->len; j++) {
-			props.propperties[i].targets[j].name = YAJL_GET_OBJECT (propperty)->keys[j];
+			for (j = 0; j < YAJL_GET_OBJECT (propperty)->len; j++) {
+				props.propperties[i].targets[j].name = YAJL_GET_OBJECT (propperty)->keys[j];
 			// printf ("\t%s\n", props.propperties[i].targets[j].name);
 
 			// Go to the target
-			const char * target_path[] = { YAJL_GET_OBJECT (root)->keys[i],
-			                               YAJL_GET_OBJECT (propperty)->keys[j],
-			                               (const char *) 0
-			                             };
-			yajl_val target = yajl_tree_get (root, target_path, yajl_t_object);
-			props.propperties[i].targets[j].len = YAJL_GET_OBJECT (target)->len;
+				const char * target_path[] = { YAJL_GET_OBJECT (root)->keys[i],
+					YAJL_GET_OBJECT (propperty)->keys[j],
+					(const char *) 0
+				};
+				yajl_val target = yajl_tree_get (root, target_path, yajl_t_object);
+				props.propperties[i].targets[j].len = YAJL_GET_OBJECT (target)->len;
 
-			props.propperties[i].targets[j].key_vals = (struct keyval_t *) calloc (
-			            YAJL_GET_OBJECT (target)->len, sizeof (struct keyval_t));
+				props.propperties[i].targets[j].key_vals = (struct keyval_t *) calloc (
+					YAJL_GET_OBJECT (target)->len, sizeof (struct keyval_t));
 
-			for (k = 0; k < YAJL_GET_OBJECT (target)->len; k++) {
-				props.propperties[i].targets[j].key_vals[k].key = (char *) YAJL_GET_OBJECT (
-				            target)->keys[k];
-				props.propperties[i].targets[j].key_vals[k].val = YAJL_GET_STRING (
-				            YAJL_GET_OBJECT (
-				                target)->values[k]);
+				for (k = 0; k < YAJL_GET_OBJECT (target)->len; k++) {
+					props.propperties[i].targets[j].key_vals[k].key = (char *) YAJL_GET_OBJECT (
+						target)->keys[k];
+					props.propperties[i].targets[j].key_vals[k].val = YAJL_GET_STRING (
+						YAJL_GET_OBJECT (
+							target)->values[k]);
 				// printf ("\t\t%s: %s\n", props.propperties[i].targets[j].key_vals[k].key,
 				// props.propperties[i].targets[j].key_vals[k].val);
+				}
 			}
 		}
 	}
+
 	return 0;
 }
 
@@ -233,18 +237,20 @@ void process (char * event, int resolve_names) {
 
 
 		// Check is there is enrichment data for each key
-		if (YAJL_IS_STRING (YAJL_GET_OBJECT (root)->values[p])) {
-			for (i = 0; i < props.len; i++) {
-				if (!strcmp (props.propperties[i].name, keyVal)) {
-					for (j = 0; j < props.propperties[i].targets->len ; j++) {
-						if (!strcmp (props.propperties[i].targets[j].name, valueVal)) {
-							for (k = 0; k < props.propperties[i].targets[j].len; k++) {
-								add_enrich (props.propperties[i].targets[j].key_vals[k].key,
-								            strlen (props.propperties[i].targets[j].key_vals[k].key),
-								            props.propperties[i].targets[j].key_vals[k].val,
-								            strlen (props.propperties[i].targets[j].key_vals[k].val));
+		if (enrich) {
+			if (YAJL_IS_STRING (YAJL_GET_OBJECT (root)->values[p])) {
+				for (i = 0; i < props.len; i++) {
+					if (!strcmp (props.propperties[i].name, keyVal)) {
+						for (j = 0; j < props.propperties[i].targets->len ; j++) {
+							if (!strcmp (props.propperties[i].targets[j].name, valueVal)) {
+								for (k = 0; k < props.propperties[i].targets[j].len; k++) {
+									add_enrich (props.propperties[i].targets[j].key_vals[k].key,
+										strlen (props.propperties[i].targets[j].key_vals[k].key),
+										props.propperties[i].targets[j].key_vals[k].val,
+										strlen (props.propperties[i].targets[j].key_vals[k].val));
+								}
+								break;
 							}
-							break;
 						}
 					}
 				}

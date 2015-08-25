@@ -43,6 +43,7 @@ static yajl_handle hand;
 static yajl_gen g;
 static int granularity = 1;
 static int resolve_names = 0;
+static char * enrich_filename = NULL;
 
 int file_flag = 0;
 char * source = NULL;
@@ -209,11 +210,14 @@ void rb_get_raw_getopts (int argc, char* argv[]) {
 	end_time_s = time (NULL);
 
 	opterr = 0;
-	while ((c = getopt (argc, argv, "no:d:s:e:i:g:?")) != -1)
+	while ((c = getopt (argc, argv, "no:d:s:e:i:g:f:?")) != -1)
 		switch (c) {
 		case 'o':
 			file_flag = 1;
 			output_filename = optarg;
+			break;
+		case 'f':
+			enrich_filename = optarg;
 			break;
 		case 'd':
 			source = optarg;
@@ -308,7 +312,7 @@ int main (int argc, char * argv[]) {
 		load_output_file (NULL);
 	}
 
-	load_file ();
+	load_file (enrich_filename);
 
 	time_t interval_s = interval * 60;
 	time_t end_interval_s = 0;
