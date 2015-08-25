@@ -38,7 +38,7 @@ static char * last_element = NULL;
 static char * output_filename = NULL;
 static time_t end_time_s = 0;
 static time_t start_time_s = 0;
-
+static int interval = 1;
 static yajl_handle hand;
 static yajl_gen g;
 
@@ -208,7 +208,7 @@ void rb_get_raw_getopts (int argc, char* argv[]) {
 	end_time_s = time (NULL);
 
 	opterr = 0;
-	while ((c = getopt (argc, argv, "o:d:s:e:")) != -1)
+	while ((c = getopt (argc, argv, "o:d:s:e:i:?")) != -1)
 		switch (c) {
 		case 'o':
 			file_flag = 1;
@@ -223,6 +223,9 @@ void rb_get_raw_getopts (int argc, char* argv[]) {
 		case 'e':
 			get_time (optarg, &end_time_s);
 			break;
+		case 'i':
+			interval = atoi (optarg);
+			break;
 		case '?':
 			return;
 		default:
@@ -234,6 +237,8 @@ void rb_get_raw_getopts (int argc, char* argv[]) {
 		rb_get_raw_print_usage();
 		exit (1);
 	}
+
+	printf ("%d\n\n", interval);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -253,11 +258,28 @@ int main (int argc, char * argv[]) {
 
 	load_file ();
 
-	char _start[BUFSIZ], _end[BUFSIZ];
-	strftime (_start, sizeof (_start), "%c", gmtime (&start_time_s));
-	strftime (_end, sizeof (_end), "%c", gmtime (&end_time_s));
+	time_t interval_s = interval * 60;
+	time_t end_interval_s = 0;
+	time_t start_interval_s = 0;
+	start_interval_s = start_time_s;
 
-	printf ("INTERVAL: %s - %s\n", _start, _end);
+
+	while (end_time_s > end_interval_s) {
+		if (start_interval_s + interval_s > end_time_s) {
+			end_interval_s = end_time_s;
+		} else {
+			end_interval_s = start_interval_s + interval_s;
+		}
+
+		char _start[BUFSIZ], _end[BUFSIZ];
+		strftime (_start, sizeof (_start), "%c", gmtime (&start_interval_s));
+		strftime (_end, sizeof (_end), "%c", gmtime (&end_interval_s));
+
+		printf ("INTERVAL: %s - %s\n", _start, _end);
+
+		start_interval_s += interval_s;
+	}
+
 
 	CURL *curl_handle;
 	CURLcode res;
