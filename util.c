@@ -113,19 +113,14 @@ void dns_cb (struct dns_ctx * ctx,
              struct dns_rr_ptr * result, void * opaque) {
 
 	struct dns_info_t * dns_info = (struct dns_info_t *) opaque;
-
-	if (result != NULL && result->dnsptr_ptr[0] != NULL) {
-		dns_info->name = result->dnsptr_ptr[0];
-	}
-
 	dns_done = 1;
-	if (result != NULL  ) {
-		// calloc
-		// free result
-		// strncpy (opaque, result->dnsptr_ptr[0], strlen (result->dnsptr_ptr[0]));
-		// add_cache (dns_info->ip, result->dnsptr_ptr[0]);
-	} else {
-		// add_cache (ip, "null");
+
+	if (result != NULL &&  result->dnsptr_ptr != NULL
+	        && result->dnsptr_ptr[0] != NULL) {
+
+		dns_info->name = strdup (result->dnsptr_ptr[0]);
+		free (result);
+		add_cache (dns_info->ip, dns_info->name);
 	}
 }
 
@@ -164,7 +159,6 @@ int rdns (char * string_val, char * host) {
 					dns_timeouts (&dns_defctx, 5, now);
 				}
 				printf ("RESOLVED: %s --> %s\n", dns_info->ip, dns_info->name);
-				add_cache (dns_info->ip, dns_info->name);
 				ret = 1;
 			}
 		}
