@@ -36,8 +36,8 @@ static int s_streamReformat = 0;
 static uint on_event = 0;
 static char * last_element = NULL;
 static char * output_filename = NULL;
-static char * start_time = NULL;
-static char * end_time = NULL;
+struct tm end_time_tm = {0};
+struct tm start_time_tm = {0};
 
 static yajl_handle hand;
 static yajl_gen g;
@@ -168,45 +168,6 @@ static size_t WriteMemoryCallback (void *contents, size_t size, size_t nmemb,
 	return realsize;
 }
 
-void rb_get_raw_getopts (int argc, char* argv[]) {
-
-	char *cvalue = NULL;
-	int index;
-	int c;
-
-	opterr = 0;
-	while ((c = getopt (argc, argv, "o:d:s:e:")) != -1)
-		switch (c) {
-		case 'o':
-			file_flag = 1;
-			output_filename = optarg;
-			break;
-		case 'd':
-			source = optarg;
-			break;
-		case 's':
-			start_time = optarg;
-			break;
-		case 'e':
-			end_time = optarg;
-			break;
-		case '?':
-			if (optopt == 'c')
-				fprintf (stderr, "Option -%c requires an argument.\n", optopt);
-			else if (isprint (optopt))
-				fprintf (stderr, "Unknown option `-%c'.\n", optopt);
-			else
-				fprintf (stderr,
-				         "Unknown option character `\\x%x'.\n",
-				         optopt);
-			return;
-		default:
-			abort ();
-		}
-	for (index = optind; index < argc; index++)
-		printf ("Non-option argument %s\n", argv[index]);
-}
-
 void rb_get_raw_print_usage() {
 	printf (
 	    "Usage: rb_get_raw.rb -d data_source -s start_timestamp [-e end_timestamp] [-f enrichment_file_path]\n"
@@ -238,11 +199,50 @@ void rb_get_raw_print_usage() {
 	);
 }
 
+void rb_get_raw_getopts (int argc, char* argv[]) {
+
+	char *cvalue = NULL;
+	int index;
+	int c;
+
+	time_t now = time (NULL);
+	end_time_tm = * (gmtime (&now));
+
+	opterr = 0;
+	while ((c = getopt (argc, argv, "o:d:s:e:")) != -1)
+		switch (c) {
+		case 'o':
+			file_flag = 1;
+			output_filename = optarg;
+			break;
+		case 'd':
+			source = optarg;
+			break;
+		case 's':
+			get_time (optarg, &start_time_tm);
+			break;
+		case 'e':
+			get_time (optarg, &end_time_tm);
+			break;
+		case '?':
+			return;
+		default:
+			abort ();
+		}
+
+	if (start_time_tm.tm_year == 0 ) {
+		printf ("Invalid start time\n");
+		rb_get_raw_print_usage();
+		exit (1);
+	}
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 int main (int argc, char * argv[]) {
 
 	dns_init (&dns_defctx, 1);
 	int retval = 0;
+
 
 	rb_get_raw_getopts (argc, argv);
 
@@ -253,6 +253,12 @@ int main (int argc, char * argv[]) {
 	}
 
 	load_file ();
+
+	char _start[BUFSIZ], _end[BUFSIZ];
+	strftime (_start, sizeof (_start), "%c", &start_time_tm);
+	strftime (_end, sizeof (_end), "%c", &end_time_tm);
+
+	printf ("INTERVAL: %s - %s\n", _start, _end);
 
 	CURL *curl_handle;
 	CURLcode res;
