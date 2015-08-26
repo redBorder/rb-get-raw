@@ -31,6 +31,7 @@
 #define STR_TYPE 1
 #define NUM_TYPE 2
 #define NULL_TYPE 3
+#define PATH "/druid/v2/?pretty=true"
 
 static int s_streamReformat = 0;
 static uint on_event = 0;
@@ -44,6 +45,8 @@ static yajl_gen g;
 static int granularity = 1;
 static int resolve_names = 0;
 static char * enrich_filename = NULL;
+static char * host = NULL;
+static char * url = NULL;
 
 int file_flag = 0;
 char * source = NULL;
@@ -184,10 +187,10 @@ void rb_get_raw_print_usage() {
 	    "\t -g [OPTIONAL]\t granularity in minutes, default 1 minute.\n"
 	    "\t -o [OPTIONAL]\t output file instead of stdout\n"
 	    "\t -n [OPTIONAL]\t resolve host names\n"
-	    "\t\t\t The format of the content file is:\n"
+	    "\t -h [OPTIONAL]\t DRUID host. If not provided, get from zookeper (TODO)\n"
 	    "\n"
 	    "-------------------------------------\n"
-	    "Enrichment File Format:\n"
+	    "Enrichment JSON File Format:\n"
 	    "-------------------------------------\n"
 	    "{\n"
 	    "  \"sensor_name\": {\n"
@@ -216,7 +219,7 @@ void rb_get_raw_getopts (int argc, char* argv[]) {
 	end_time_s = time (NULL);
 
 	opterr = 0;
-	while ((c = getopt (argc, argv, "no:d:s:e:i:g:f:?")) != -1)
+	while ((c = getopt (argc, argv, "no:d:s:e:i:g:f:h:?")) != -1)
 		switch (c) {
 		case 'o':
 			file_flag = 1;
@@ -243,6 +246,9 @@ void rb_get_raw_getopts (int argc, char* argv[]) {
 		case 'n':
 			resolve_names = 1;
 			break;
+		case 'h':
+			host = optarg;
+			break;
 		case '?':
 			return;
 		default:
@@ -250,18 +256,29 @@ void rb_get_raw_getopts (int argc, char* argv[]) {
 		}
 
 	if (start_time_s == 0 ) {
-		printf ("Invalid start time\n");
 		rb_get_raw_print_usage();
+		printf ("\nInvalid start time\n");
 		exit (1);
 	}
 
 	if (source == NULL) {
-		printf ("Invalid source\n");
+		rb_get_raw_print_usage();
+		printf ("\nInvalid source\n");
 		exit (1);
 	}
 
 	if (granularity < interval) {
 		granularity = interval;
+	}
+
+	if (host == NULL) {
+		rb_get_raw_print_usage();
+		printf ("\nHost not provided\n");
+		exit (1);
+	} else {
+		url = calloc (strlen (host) + strlen (PATH) + 1, sizeof (char));
+		strcat (url, host);
+		strcat (url, PATH);
 	}
 }
 
@@ -353,12 +370,13 @@ int main (int argc, char * argv[]) {
 		          gmtime (&end_interval_s));
 
 		query = gen_query (start_interval_str, end_interval_str);
-		printf ("Getting data from druid [ %s/%s ]\n", start_interval_str,
-		        end_interval_str);
+		if (file_flag) {
+			printf ("Getting data from druid [ %s/%s ]\n", start_interval_str,
+			        end_interval_str);
+		}
 		curl_handle = curl_easy_init();
 
-		curl_easy_setopt (curl_handle, CURLOPT_URL,
-		                  "http://10.0.150.23:8080/druid/v2/?pretty=true");
+		curl_easy_setopt (curl_handle, CURLOPT_URL, url);
 
 		struct curl_slist * headers = NULL;
 		headers = curl_slist_append (headers, "Accept: application/json");
