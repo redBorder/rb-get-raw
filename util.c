@@ -121,7 +121,7 @@ void dns_cb (struct dns_ctx * ctx,
 		dns_info->name = strdup (result->dnsptr_ptr[0]);
 		free (result);
 	} else {
-		dns_info->name = strdup ("unknown");
+		dns_info->name = strdup ("");
 	}
 
 	add_cache (dns_info->ip, dns_info->name);

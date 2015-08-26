@@ -64,13 +64,13 @@ int load_file (char * enrich_filename) {
 		}
 		enrich = 1;
 
-	/* null plug buffers */
+		/* null plug buffers */
 		fileData[0] = errbuf[0] = 0;
 
-	/* read the entire config file */
+		/* read the entire config file */
 		rd = fread ((void *) fileData, 1, sizeof (fileData) - 1, file);
 
-	/* file read error handling */
+		/* file read error handling */
 		if (rd == 0 && !feof (stdin)) {
 			fprintf (stderr, "error encountered on file read\n");
 			return 1;
@@ -79,10 +79,10 @@ int load_file (char * enrich_filename) {
 			return 1;
 		}
 
-	/* we have the whole config file in memory.  let's parse it ... */
+		/* we have the whole config file in memory.  let's parse it ... */
 		node = yajl_tree_parse ((const char *) fileData, errbuf, sizeof (errbuf));
 
-	/* parse error handling */
+		/* parse error handling */
 		if (node == NULL) {
 			fprintf (stderr, "parse_error: ");
 			if (strlen (errbuf)) fprintf (stderr, " %s", errbuf);
@@ -95,50 +95,50 @@ int load_file (char * enrich_filename) {
 		int j;
 		int k;
 
-	// Go to the root
+		// Go to the root
 		const char * root_path[] = { (const char *) 0 };
 		yajl_val root = yajl_tree_get (node, root_path, yajl_t_object);
 		props.propperties = (struct propperty_t *) calloc (YAJL_GET_OBJECT (root)->len,
-			sizeof (struct propperty_t));
+		                    sizeof (struct propperty_t));
 		props.len = YAJL_GET_OBJECT (root)->len;
 
-	// Iterate through propperties
+		// Iterate through propperties
 		for (i = 0; i < YAJL_GET_OBJECT (root)->len; i++) {
 			props.propperties[i].name = YAJL_GET_OBJECT (root)->keys[i];
-		// printf ("%s\n", props.propperties[i].name);
+			// printf ("%s\n", props.propperties[i].name);
 
-		// Go to the propperty
+			// Go to the propperty
 			const char * propperty_path[] = { YAJL_GET_OBJECT (root)->keys[i],
-				(const char *) 0
-			};
+			                                  (const char *) 0
+			                                };
 			yajl_val propperty = yajl_tree_get (root, propperty_path, yajl_t_object);
 			props.propperties[i].targets = (struct target_t *) calloc (YAJL_GET_OBJECT (
-				propperty)->len, sizeof (struct target_t));
+			                                   propperty)->len, sizeof (struct target_t));
 
-		// Iterate through targets
+			// Iterate through targets
 			for (j = 0; j < YAJL_GET_OBJECT (propperty)->len; j++) {
 				props.propperties[i].targets[j].name = YAJL_GET_OBJECT (propperty)->keys[j];
-			// printf ("\t%s\n", props.propperties[i].targets[j].name);
+				// printf ("\t%s\n", props.propperties[i].targets[j].name);
 
-			// Go to the target
+				// Go to the target
 				const char * target_path[] = { YAJL_GET_OBJECT (root)->keys[i],
-					YAJL_GET_OBJECT (propperty)->keys[j],
-					(const char *) 0
-				};
+				                               YAJL_GET_OBJECT (propperty)->keys[j],
+				                               (const char *) 0
+				                             };
 				yajl_val target = yajl_tree_get (root, target_path, yajl_t_object);
 				props.propperties[i].targets[j].len = YAJL_GET_OBJECT (target)->len;
 
 				props.propperties[i].targets[j].key_vals = (struct keyval_t *) calloc (
-					YAJL_GET_OBJECT (target)->len, sizeof (struct keyval_t));
+				            YAJL_GET_OBJECT (target)->len, sizeof (struct keyval_t));
 
 				for (k = 0; k < YAJL_GET_OBJECT (target)->len; k++) {
 					props.propperties[i].targets[j].key_vals[k].key = (char *) YAJL_GET_OBJECT (
-						target)->keys[k];
+					            target)->keys[k];
 					props.propperties[i].targets[j].key_vals[k].val = YAJL_GET_STRING (
-						YAJL_GET_OBJECT (
-							target)->values[k]);
-				// printf ("\t\t%s: %s\n", props.propperties[i].targets[j].key_vals[k].key,
-				// props.propperties[i].targets[j].key_vals[k].val);
+					            YAJL_GET_OBJECT (
+					                target)->values[k]);
+					// printf ("\t\t%s: %s\n", props.propperties[i].targets[j].key_vals[k].key,
+					// props.propperties[i].targets[j].key_vals[k].val);
 				}
 			}
 		}
@@ -245,9 +245,9 @@ void process (char * event, int resolve_names) {
 							if (!strcmp (props.propperties[i].targets[j].name, valueVal)) {
 								for (k = 0; k < props.propperties[i].targets[j].len; k++) {
 									add_enrich (props.propperties[i].targets[j].key_vals[k].key,
-										strlen (props.propperties[i].targets[j].key_vals[k].key),
-										props.propperties[i].targets[j].key_vals[k].val,
-										strlen (props.propperties[i].targets[j].key_vals[k].val));
+									            strlen (props.propperties[i].targets[j].key_vals[k].key),
+									            props.propperties[i].targets[j].key_vals[k].val,
+									            strlen (props.propperties[i].targets[j].key_vals[k].val));
 								}
 								break;
 							}
@@ -261,8 +261,10 @@ void process (char * event, int resolve_names) {
 		if (resolve_names) {
 			if (!strcmp (keyVal, "src") || !strcmp (keyVal, "dst")) {
 				if (rdns (valueVal, host_name)) {
-					add_enrich ("target_name", strlen ("target_name"), host_name,
-					            strlen (host_name));
+					if (strlen (host_name) > 0) {
+						add_enrich ("target_name", strlen ("target_name"), host_name,
+						            strlen (host_name));
+					}
 				}
 			}
 		}
@@ -303,101 +305,101 @@ int eventos = 0;
 
 void end_process() {
 
-    struct event_t processed_event = {NULL, 0, 0};
-    struct keyval_t_list * current_event_aux  = current_event;
-    struct keyval_t_list * current_event_free  = current_event;
-    struct keyval_t_list * enrichment_aux = NULL;
-    struct keyval_t_list * enrichment_free = NULL;
-    int enriched = 0;
+	struct event_t processed_event = {NULL, 0, 0};
+	struct keyval_t_list * current_event_aux  = current_event;
+	struct keyval_t_list * current_event_free  = current_event;
+	struct keyval_t_list * enrichment_aux = NULL;
+	struct keyval_t_list * enrichment_free = NULL;
+	int enriched = 0;
 
-    event_putc (&processed_event, '{');
-    int is_first_key = 1;
+	event_putc (&processed_event, '{');
+	int is_first_key = 1;
 
-    while (current_event_aux != NULL) {
+	while (current_event_aux != NULL) {
 
 
-        enrichment_aux = enrichment;
+		enrichment_aux = enrichment;
 
-        while (enrichment_aux != NULL) {
-            if (!strncmp (current_event_aux->key_val->key, enrichment_aux->key_val->key,
-                          strlen (enrichment_aux->key_val->key)) && enrich) {
-                add_key (&processed_event, current_event_aux->key_val->key,
-                         strlen (current_event_aux->key_val->key),
-                         is_first_key);
-                add_string (&processed_event, enrichment_aux->key_val->val,
-                            strlen (enrichment_aux->key_val->val));
-                enrichment_aux->key_val->enriched = 1;
-                enriched++;
-                is_first_key = 0;
-                break;
-            }
+		while (enrichment_aux != NULL) {
+			if (!strncmp (current_event_aux->key_val->key, enrichment_aux->key_val->key,
+			              strlen (enrichment_aux->key_val->key))) {
+				add_key (&processed_event, current_event_aux->key_val->key,
+				         strlen (current_event_aux->key_val->key),
+				         is_first_key);
+				add_string (&processed_event, enrichment_aux->key_val->val,
+				            strlen (enrichment_aux->key_val->val));
+				enrichment_aux->key_val->enriched = 1;
+				enriched++;
+				is_first_key = 0;
+				break;
+			}
 
-            enrichment_aux = enrichment_aux->next;
-        }
+			enrichment_aux = enrichment_aux->next;
+		}
 
-        if (!enriched) {
-            switch (current_event_aux->key_val->type) {
-            case 1:
-                add_key (&processed_event, current_event_aux->key_val->key,
-                         strlen (current_event_aux->key_val->key),
-                         is_first_key);
-                add_string (&processed_event, current_event_aux->key_val->val,
-                            strlen (current_event_aux->key_val->val));
-                is_first_key = 0;
+		if (!enriched) {
+			switch (current_event_aux->key_val->type) {
+			case 1:
+				add_key (&processed_event, current_event_aux->key_val->key,
+				         strlen (current_event_aux->key_val->key),
+				         is_first_key);
+				add_string (&processed_event, current_event_aux->key_val->val,
+				            strlen (current_event_aux->key_val->val));
+				is_first_key = 0;
 
-                break;
-            case 2:
-                add_key (&processed_event, current_event_aux->key_val->key,
-                         strlen (current_event_aux->key_val->key),
-                         is_first_key);
-                add_number (&processed_event, current_event_aux->key_val->val,
-                            strlen (current_event_aux->key_val->val));
-                is_first_key = 0;
+				break;
+			case 2:
+				add_key (&processed_event, current_event_aux->key_val->key,
+				         strlen (current_event_aux->key_val->key),
+				         is_first_key);
+				add_number (&processed_event, current_event_aux->key_val->val,
+				            strlen (current_event_aux->key_val->val));
+				is_first_key = 0;
 
-                break;
-            case 3:
-                //add_null (&processed_event);
-                break;
-            }
-        }
+				break;
+			case 3:
+				//add_null (&processed_event);
+				break;
+			}
+		}
 
-        enriched = 0;
-        current_event_free = current_event_aux;
-        current_event_aux = current_event_aux->next;
-        free (current_event_free->key_val);
-        free (current_event_free);
-    };
+		enriched = 0;
+		current_event_free = current_event_aux;
+		current_event_aux = current_event_aux->next;
+		free (current_event_free->key_val);
+		free (current_event_free);
+	};
 
-    enrichment_aux = enrichment;
+	enrichment_aux = enrichment;
 
-    while (enrichment_aux != NULL) {
+	while (enrichment_aux != NULL) {
 
-        if (enrichment_aux->key_val->enriched == 0 && enrich) {
-            add_key (&processed_event, enrichment_aux->key_val->key,
-                     strlen (enrichment_aux->key_val->key), 0);
-            add_string (&processed_event, enrichment_aux->key_val->val,
-                        strlen (enrichment_aux->key_val->val));
-        }
+		if (enrichment_aux->key_val->enriched == 0) {
+			add_key (&processed_event, enrichment_aux->key_val->key,
+			         strlen (enrichment_aux->key_val->key), 0);
+			add_string (&processed_event, enrichment_aux->key_val->val,
+			            strlen (enrichment_aux->key_val->val));
+		}
 
-        enrichment_aux = enrichment_aux->next;
-    }
+		enrichment_aux = enrichment_aux->next;
+	}
 
-    while (enrichment != NULL) {
-        enrichment_free = enrichment;
-        enrichment = enrichment->next;
-        free (enrichment_free->key_val);
-        free (enrichment_free);
-    }
+	while (enrichment != NULL) {
+		enrichment_free = enrichment;
+		enrichment = enrichment->next;
+		free (enrichment_free->key_val);
+		free (enrichment_free);
+	}
 
-event_putc (&processed_event, '}');
-event_putc (&processed_event, '\n');
-event_putc (&processed_event, '\0');
-fwrite (processed_event.str, sizeof (char), processed_event.length - 1,
-	output_file);
+	event_putc (&processed_event, '}');
+	event_putc (&processed_event, '\n');
+	event_putc (&processed_event, '\0');
+	fwrite (processed_event.str, sizeof (char), processed_event.length - 1,
+	        output_file);
 
-current_event = NULL;
-enrichment = NULL;
-free (processed_event.str);
+	current_event = NULL;
+	enrichment = NULL;
+	free (processed_event.str);
 }
 
 void close_file () {
