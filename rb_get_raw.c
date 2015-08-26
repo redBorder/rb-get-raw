@@ -28,6 +28,13 @@
 
 #include "enrichment.h"
 
+typedef enum {
+	rb_flow			= 1,
+	rb_event		= 2,
+	rb_social		= 3,
+	rb_monitor	= 4
+} SERVICE;
+
 #define STR_TYPE 1
 #define NUM_TYPE 2
 #define NULL_TYPE 3
@@ -47,6 +54,7 @@ static int resolve_names = 0;
 static char * enrich_filename = NULL;
 static char * host = NULL;
 static char * url = NULL;
+static SERVICE service = 0;
 
 int file_flag = 0;
 char * source = NULL;
@@ -261,7 +269,14 @@ void rb_get_raw_getopts (int argc, char* argv[]) {
 		exit (1);
 	}
 
-	if (source == NULL) {
+	if (source != NULL) {
+		if (!strcmp (source, "rb_flow")) service = rb_flow;
+		if (!strcmp (source, "rb_monitor")) service = rb_monitor;
+		if (!strcmp (source, "rb_event")) service = rb_event;
+		if (!strcmp (source, "rb_social")) service = rb_social;
+	}
+
+	if (service == 0) {
 		rb_get_raw_print_usage();
 		printf ("\nInvalid source\n");
 		exit (1);
@@ -285,6 +300,63 @@ void rb_get_raw_getopts (int argc, char* argv[]) {
 int gen_query0 (char *dst, size_t dst_sz, char * start_interval_str,
                 char * end_interval_str) {
 
+	char * dimensions = NULL;
+	char * aggregations = NULL;
+
+	switch (service) {
+	case rb_flow:
+		dimensions =
+		    "[\"application_id_name\",\"biflow_direction\", \"conversation\", \"direction\", \"engine_id_name\", \"http_user_agent_os\", \"http_host\", \"http_social_media\", \"http_social_user\", \"http_referer_l1\", \"l4_proto\", \"ip_protocol_version\", \"sensor_name\", \"sensor_uuid\", \"scatterplot\", \"src\", \"src_country_code\", \"src_net_name\", \"src_port\", \"src_as_name\", \"client_id\", \"client_mac\", \"client_mac_vendor\", \"dot11_status\", \"src_vlan\", \"src_map\", \"srv_port\", \"dst\", \"dst_country_code\", \"dst_net_name\", \"dst_port\", \"dst_as_name\", \"dst_vlan\", \"dst_map\", \"input_snmp\", \"output_snmp\", \"input_vrf\", \"output_vrf\", \"tos\", \"client_latlong\", \"coordinates_map\", \"deployment\", \"deployment_uuid\", \"namespace\", \"namespace_uuid\", \"campus\", \"campus_uuid\", \"building\", \"building_uuid\", \"floor\", \"floor_uuid\", \"zone\", \"zone_uuid\", \"wireless_uuid\", \"client_rssi\", \"client_rssi_num\", \"client_snr\", \"client_snr_num\", \"wireless_station\", \"hnblocation\", \"hnbgeolocation\", \"rat\", \"darklist_score_name\", \"darklist_category\", \"darklist_protocol\", \"darklist_direction\", \"darklist_score\", \"market\", \"market_uuid\", \"organization\", \"organization_uuid\", \"dot11_protocol\", \"type\", \"duration\"]";
+		aggregations = "[{"
+		               "\"type\": \"longSum\","
+		               "\"name\": \"events\","
+		               "\"fieldName\": \"events\""
+		               "}, {"
+		               "\"type\": \"longSum\","
+		               "\"name\": \"pkts\","
+		               "\"fieldName\": \"sum_pkts\""
+		               "}, {"
+		               "\"type\": \"longSum\","
+		               "\"name\": \"bytes\","
+		               "\"fieldName\": \"sum_bytes\""
+		               "}]";
+		break;
+	case rb_event:
+		dimensions =
+		    "[\"action\", \"classification\", \"conversation\", \"domain_name\", \"ethlength_range\", \"group_name\", \"group_id\", \"group_uuid\", \"sig_generator\", \"icmptype\", \"iplen_range\", \"l4_proto\", \"rev\", \"sensor_name\", \"sensor_uuid\", \"deployment\", \"deployment_uuid\", \"namespace\", \"namespace_uuid\", \"priority\", \"msg\", \"sig_id\", \"scatterplot\", \"ethsrc\", \"ethsrc_vendor\", \"src\", \"src_country_code\", \"src_net_name\", \"src_port\", \"src_as_name\", \"src_map\", \"ethdst\", \"ethdst_vendor\", \"dst\", \"dst_country_code\", \"dst_net_name\", \"dst_port\", \"dst_as_name\", \"dst_map\", \"tos\", \"ttl\", \"vlan\", \"darklist_score_name\", \"darklist_category\", \"darklist_protocol\", \"darklist_direction\", \"darklist_score\", \"market\", \"market_uuid\", \"organization\", \"organization_uuid\", \"client_latlong\", \"floor\", \"floor_uuid\", \"zone\", \"building\", \"building_uuid\", \"campus\", \"campus_uuid\", \"wireless_station\", \"sha256\", \"file_size\", \"file_uri\", \"file_hostname\"]";
+		aggregations = "[{"
+		               "\"type\": \"longSum\","
+		               "\"name\": \"events\","
+		               "\"fieldName\": \"events\""
+		               "}]";
+		break;
+	case rb_monitor:
+		dimensions =
+		    "[\"sensor_name\", \"monitor\", \"type\", \"unit\", \"group_name\"]";
+		aggregations = "[{"
+		               "\"type\": \"longSum\","
+		               "\"name\": \"monitors\","
+		               "\"fieldName\": \"events\""
+		               "}, {"
+		               "\"type\": \"doubleSum\","
+		               "\"name\": \"sum_value\","
+		               "\"fieldName\": \"sum_value\""
+		               "}]";
+		break;
+	case rb_social:
+		dimensions =
+		    "[\"client_id\", \"client_latlong\", \"user_screen_name\", \"user_name\", \"user_id\", \"type\", \"hashtags\", \"mentions\", \"msg\", \"sentiment\", \"msg_send_from\", \"user_from\", \"user_profile_img_https\", \"src_country_code\", \"influence\", \"picture_url\", \"language\", \"category\", \"sensor_name\", \"sensor_uuid\", \"floor\", \"floor_uuid\", \"building\", \"building_uuid\", \"campus\", \"campus_uuid\", \"market\", \"market_uuid\", \"organization\", \"organization_uuid\", \"service_provider\", \"service_provider_uuid\", \"deployment\", \"deployment_uuid\", \"namespace\", \"namespace_uuid\"]";
+		aggregations = "[{"
+		               "\"type\": \"count\","
+		               "\"name\": \"events\""
+		               "}, {"
+		               "\"type\": \"longSum\","
+		               "\"name\": \"sum_followers\","
+		               "\"fieldName\": \"followers\""
+		               "}]";
+		break;
+	}
+
 	return snprintf (dst, dst_sz, "{"
 	                 "\"dataSource\": \"%s\","
 	                 "\"granularity\": {"
@@ -293,21 +365,16 @@ int gen_query0 (char *dst, size_t dst_sz, char * start_interval_str,
 	                 "},"
 	                 "\"intervals\": [\"%s+00:00/%s+00:00\"],"
 	                 "\"queryType\": \"groupBy\","
-	                 "\"dimensions\": [\"application_id_name\",\"biflow_direction\", \"conversation\", \"direction\", \"engine_id_name\", \"http_user_agent_os\", \"http_host\", \"http_social_media\", \"http_social_user\", \"http_referer_l1\", \"l4_proto\", \"ip_protocol_version\", \"sensor_name\", \"sensor_uuid\", \"scatterplot\", \"src\", \"src_country_code\", \"src_net_name\", \"src_port\", \"src_as_name\", \"client_id\", \"client_mac\", \"client_mac_vendor\", \"dot11_status\", \"src_vlan\", \"src_map\", \"srv_port\", \"dst\", \"dst_country_code\", \"dst_net_name\", \"dst_port\", \"dst_as_name\", \"dst_vlan\", \"dst_map\", \"input_snmp\", \"output_snmp\", \"input_vrf\", \"output_vrf\", \"tos\", \"client_latlong\", \"coordinates_map\", \"deployment\", \"deployment_uuid\", \"namespace\", \"namespace_uuid\", \"campus\", \"campus_uuid\", \"building\", \"building_uuid\", \"floor\", \"floor_uuid\", \"zone\", \"zone_uuid\", \"wireless_uuid\", \"client_rssi\", \"client_rssi_num\", \"client_snr\", \"client_snr_num\", \"wireless_station\", \"hnblocation\", \"hnbgeolocation\", \"rat\", \"darklist_score_name\", \"darklist_category\", \"darklist_protocol\", \"darklist_direction\", \"darklist_score\", \"market\", \"market_uuid\", \"organization\", \"organization_uuid\", \"dot11_protocol\", \"type\", \"duration\"],"
-	                 "\"aggregations\": [{"
-	                 "\"type\": \"longSum\","
-	                 "\"name\": \"pkts\","
-	                 "\"fieldName\": \"sum_pkts\""
-	                 "}, {"
-	                 "\"type\": \"longSum\","
-	                 "\"name\": \"bytes\","
-	                 "\"fieldName\": \"sum_bytes\""
-	                 "}]"
+	                 "\"dimensions\": %s,"
+	                 "\"aggregations\": %s"
 	                 "}",
 	                 source,
 	                 granularity,
 	                 start_interval_str,
-	                 end_interval_str);
+	                 end_interval_str,
+	                 dimensions,
+	                 aggregations);
+
 }
 
 char *gen_query (char * start_interval_str,
