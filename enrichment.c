@@ -2,6 +2,8 @@
 
 static int enrich = 0;
 static int times = 1;
+char host_name[128] = "";
+
 
 struct keyval_t {
 	int is_first_key;
@@ -252,7 +254,6 @@ void process (char * event, int resolve_names) {
 				}
 			}
 		}
-		char * host_name = (char *) calloc (128, sizeof (char));
 
 		if (resolve_names) {
 			if (!strcmp (keyVal, "src") || !strcmp (keyVal, "dst")) {
