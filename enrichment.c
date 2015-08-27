@@ -300,7 +300,9 @@ void process (char * event, int resolve_names) {
 		current_event_aux->key_val->type = type;
 		current_event_aux->key_val->is_first_key = is_first_key;
 	}
+
 	end_process();
+	yajl_tree_free (node);
 }
 
 int eventos = 0;
