@@ -1,21 +1,23 @@
-BIN=rb_get_raw
-CC=gcc
-SRCS=rb_get_raw.c enrichment.c util.c
+BIN=	rb_get_raw
 
-$(BIN): rb_get_raw.o enrichment.o util.o
-	gcc $(SRCS) -L /opt/rb/lib -I /opt/rb/include/ -lyajl -lcurl -ludns -o $(BIN)
+SRCS=	rb_get_raw.c enrichment.c util.c
+OBJS=	$(SRCS:.c=.o)
 
-rb_get_raw.o: rb_get_raw.c
-	gcc -c -L /opt/rb/lib -I /opt/rb/include/ rb_get_raw.c
+.PHONY:
 
-enrichment.o: enrichment.o
-	gcc -c -L /opt/rb/lib -I /opt/rb/include/ enrichment.c
+all: $(BIN)
 
-util.o: util.c
-	gcc -c -L /opt/rb/lib -I /opt/rb/include/ util.c
+include mklove/Makefile.base
 
-install: $(BIN)
-	cp $(BIN) /opt/rb/bin
+.PHONY: version.c
 
-clean:
-	rm -f *.o
+version.c:
+	@rm -f $@
+	@echo "const char *rb_register_revision=\"`git describe --abbrev=6 --dirty --tags --always`\";" >> $@
+	@echo 'const char *rb_register_version="1.0.1";' >> $@
+
+install: bin-install
+
+clean: bin-clean
+
+-include $(DEPS)
