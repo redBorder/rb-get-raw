@@ -1,6 +1,7 @@
 #include "enrichment.h"
 
 static int enrich = 0;
+static int times = 1;
 
 struct keyval_t {
 	int is_first_key;
@@ -263,6 +264,12 @@ void process (char * event, int resolve_names) {
 			}
 		}
 
+		if (!strcmp (keyVal, "events")) {
+			if (type == 2) {
+				times = atoi (valueVal);
+			}
+		}
+
 		struct keyval_t_list * current_event_aux = NULL;
 
 		if (current_event == NULL) {
@@ -305,54 +312,57 @@ void end_process() {
 	struct keyval_t_list * enrichment_aux = NULL;
 	struct keyval_t_list * enrichment_free = NULL;
 	int enriched = 0;
+	int i = 0;
 
 	event_putc (&processed_event, '{');
 	int is_first_key = 1;
 
 	while (current_event_aux != NULL) {
 
+		if (strcmp (current_event_aux->key_val->key, "events")) {
 
-		enrichment_aux = enrichment;
+			enrichment_aux = enrichment;
 
-		while (enrichment_aux != NULL) {
-			if (!strncmp (current_event_aux->key_val->key, enrichment_aux->key_val->key,
-			              strlen (enrichment_aux->key_val->key))) {
-				add_key (&processed_event, current_event_aux->key_val->key,
-				         strlen (current_event_aux->key_val->key),
-				         is_first_key);
-				add_string (&processed_event, enrichment_aux->key_val->val,
-				            strlen (enrichment_aux->key_val->val));
-				enrichment_aux->key_val->enriched = 1;
-				enriched++;
-				is_first_key = 0;
-				break;
+			while (enrichment_aux != NULL) {
+				if (!strncmp (current_event_aux->key_val->key, enrichment_aux->key_val->key,
+				              strlen (enrichment_aux->key_val->key))) {
+					add_key (&processed_event, current_event_aux->key_val->key,
+					         strlen (current_event_aux->key_val->key),
+					         is_first_key);
+					add_string (&processed_event, enrichment_aux->key_val->val,
+					            strlen (enrichment_aux->key_val->val));
+					enrichment_aux->key_val->enriched = 1;
+					enriched++;
+					is_first_key = 0;
+					break;
+				}
+
+				enrichment_aux = enrichment_aux->next;
 			}
 
-			enrichment_aux = enrichment_aux->next;
-		}
+			if (!enriched) {
+				switch (current_event_aux->key_val->type) {
+				case 1:
+					add_key (&processed_event, current_event_aux->key_val->key,
+					         strlen (current_event_aux->key_val->key),
+					         is_first_key);
+					add_string (&processed_event, current_event_aux->key_val->val,
+					            strlen (current_event_aux->key_val->val));
+					is_first_key = 0;
 
-		if (!enriched) {
-			switch (current_event_aux->key_val->type) {
-			case 1:
-				add_key (&processed_event, current_event_aux->key_val->key,
-				         strlen (current_event_aux->key_val->key),
-				         is_first_key);
-				add_string (&processed_event, current_event_aux->key_val->val,
-				            strlen (current_event_aux->key_val->val));
-				is_first_key = 0;
+					break;
+				case 2:
+					add_key (&processed_event, current_event_aux->key_val->key,
+					         strlen (current_event_aux->key_val->key),
+					         is_first_key);
+					add_number (&processed_event, current_event_aux->key_val->val,
+					            strlen (current_event_aux->key_val->val));
+					is_first_key = 0;
 
-				break;
-			case 2:
-				add_key (&processed_event, current_event_aux->key_val->key,
-				         strlen (current_event_aux->key_val->key),
-				         is_first_key);
-				add_number (&processed_event, current_event_aux->key_val->val,
-				            strlen (current_event_aux->key_val->val));
-				is_first_key = 0;
-
-				break;
-			default:
-				break;
+					break;
+				default:
+					break;
+				}
 			}
 		}
 
@@ -387,8 +397,10 @@ void end_process() {
 	event_putc (&processed_event, '}');
 	event_putc (&processed_event, '\n');
 	event_putc (&processed_event, '\0');
-	fwrite (processed_event.str, sizeof (char), processed_event.length - 1,
-	        output_file);
+	for (i = 0; i < times ; i++) {
+		fwrite (processed_event.str, sizeof (char), processed_event.length - 1,
+		        output_file);
+	}
 
 	current_event = NULL;
 	enrichment = NULL;

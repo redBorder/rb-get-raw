@@ -7,4 +7,4 @@
 // install
 #define WITH_INSTALL 1
 // gitversion
-#define GITVERSION "0.9-9-g91f105"
+#define GITVERSION "0.9-10-gaf2cc9"
