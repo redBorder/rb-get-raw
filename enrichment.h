@@ -15,3 +15,5 @@ void enrich_free();
 void process (char * event, int resolve_names);
 void end_process();
 void close_file();
+void add_enrich (const char * keyVal,
+                 char * valueVal);

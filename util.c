@@ -1,4 +1,5 @@
 #include "util.h"
+#define UNUSED(x) (void)(x)
 
 static int dns_done = 0;
 
@@ -17,7 +18,7 @@ void event_putc (struct event_t * event, char c) {
 	event->length++;
 }
 
-void event_puts (struct event_t * event, char * s, size_t len) {
+void event_puts (struct event_t * event, const char * s, size_t len) {
 	int resized = 0;
 
 	while (event->size - event->length <= len) {
@@ -28,11 +29,11 @@ void event_puts (struct event_t * event, char * s, size_t len) {
 		event->str = (char*) realloc (event->str, event->size);
 		if (event->str == NULL) exit (1);
 	}
-	memcpy ((void*)event->str + event->length, s, len);
+	memcpy ((char*)event->str + event->length, s, len);
 	event->length += len;
 }
 
-void add_key (struct event_t * event, char * new_key, size_t len,
+void add_key (struct event_t * event, const char * new_key, size_t len,
               int first_key) {
 	if (first_key) {
 		first_key = 0;
@@ -50,7 +51,7 @@ void add_number (struct event_t * event, char * new_number,
 	event_puts (event, new_number, len);
 }
 
-void add_string (struct event_t * event, char * new_string, size_t len) {
+void add_string (struct event_t * event, const char * new_string, size_t len) {
 	event_putc (event, '\"');
 	event_puts (event, new_string, len);
 	event_putc (event, '\"');
@@ -62,7 +63,7 @@ void add_null (struct event_t * event) {
 
 struct dns_cache_t * dns_cache = NULL;
 
-int IsPrivateAddress (char * ip_addr) {
+static int IsPrivateAddress (char * ip_addr) {
 	int i = 0;
 	char s1[4];
 	char s2[4];
@@ -76,7 +77,7 @@ int IsPrivateAddress (char * ip_addr) {
 			}
 
 			s1[++i] = '\0';
-			uint b1 = atoi (s1);
+			uint b1 = (uint) atoi (s1);
 
 			while ( ip_addr[i] != '.' ) {
 				s2[i] = ip_addr[i];
@@ -84,7 +85,7 @@ int IsPrivateAddress (char * ip_addr) {
 			}
 
 			s2[++i] = '\0';
-			uint b2 = atoi (s2);
+			uint b2 = (uint) atoi (s2);
 
 			// 10.x.y.z
 			if (b1 == 10)
@@ -109,9 +110,10 @@ struct dns_info_t {
 	// TODO name len
 };
 
-void dns_cb (struct dns_ctx * ctx,
-             struct dns_rr_ptr * result, void * opaque) {
+static void dns_cb (struct dns_ctx * ctx,
+                    struct dns_rr_ptr * result, void * opaque) {
 
+	UNUSED (ctx);
 	struct dns_info_t * dns_info = (struct dns_info_t *) opaque;
 	dns_done = 1;
 

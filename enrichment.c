@@ -6,7 +6,7 @@ struct keyval_t {
 	int is_first_key;
 	int type;
 	int enriched;
-	char * key;
+	const char * key;
 	char * val;
 };
 
@@ -65,7 +65,8 @@ int load_file (char * enrich_filename) {
 		enrich = 1;
 
 		/* null plug buffers */
-		fileData[0] = errbuf[0] = 0;
+		memset (fileData, 0, sizeof (char));
+		memset (errbuf, 0, sizeof (char));
 
 		/* read the entire config file */
 		rd = fread ((void *) fileData, 1, sizeof (fileData) - 1, file);
@@ -91,9 +92,9 @@ int load_file (char * enrich_filename) {
 			return 1;
 		}
 
-		int i;
-		int j;
-		int k;
+		size_t i;
+		size_t j;
+		size_t k;
 
 		// Go to the root
 		const char * root_path[] = { (const char *) 0 };
@@ -117,7 +118,8 @@ int load_file (char * enrich_filename) {
 
 			// Iterate through targets
 			for (j = 0; j < YAJL_GET_OBJECT (propperty)->len; j++) {
-				props.propperties[i].targets[j].name = YAJL_GET_OBJECT (propperty)->keys[j];
+				props.propperties[i].targets[j].name = YAJL_GET_OBJECT (
+				        propperty)->keys[j];
 				// printf ("\t%s\n", props.propperties[i].targets[j].name);
 
 				// Go to the target
@@ -132,7 +134,7 @@ int load_file (char * enrich_filename) {
 				            YAJL_GET_OBJECT (target)->len, sizeof (struct keyval_t));
 
 				for (k = 0; k < YAJL_GET_OBJECT (target)->len; k++) {
-					props.propperties[i].targets[j].key_vals[k].key = (char *) YAJL_GET_OBJECT (
+					props.propperties[i].targets[j].key_vals[k].key = YAJL_GET_OBJECT (
 					            target)->keys[k];
 					props.propperties[i].targets[j].key_vals[k].val = YAJL_GET_STRING (
 					            YAJL_GET_OBJECT (
@@ -149,10 +151,7 @@ int load_file (char * enrich_filename) {
 
 static struct keyval_t_list * enrichment = NULL;
 
-static void add_enrich (char * keyVal,
-                        size_t keyLen,
-                        char * valueVal,
-                        size_t valueLen) {
+void add_enrich (const char * keyVal, char * valueVal) {
 
 	struct keyval_t_list * enrichment_aux = NULL;
 
@@ -177,9 +176,7 @@ static void add_enrich (char * keyVal,
 	                          sizeof (struct keyval_t));
 
 	enrichment_aux->key_val->key = keyVal;
-	// enrichment_aux->key_val->key_len = keyLen;
 	enrichment_aux->key_val->val = valueVal;
-	// enrichment_aux->key_val->val_len = valueLen;
 	enrichment_aux->key_val->enriched = 0;
 }
 
@@ -209,7 +206,7 @@ void process (char * event, int resolve_names) {
 
 	size_t len = YAJL_GET_OBJECT (root)->len;
 
-	int p = 0;
+	size_t p = 0;
 	int type = 0;
 	int is_first_key = 1;
 
@@ -217,7 +214,7 @@ void process (char * event, int resolve_names) {
 	for (p = 0; p < len; p++) {
 
 
-		const char * keyVal = (char *) YAJL_GET_OBJECT (root)->keys[p];
+		const char * keyVal = YAJL_GET_OBJECT (root)->keys[p];
 		char * valueVal = NULL;
 
 		if (YAJL_IS_NULL (YAJL_GET_OBJECT (root)->values[p])) {
@@ -231,9 +228,9 @@ void process (char * event, int resolve_names) {
 			type = 1;
 		}
 
-		int i = 0;
-		int j = 0;
-		int k = 0;
+		size_t i = 0;
+		size_t j = 0;
+		size_t k = 0;
 
 
 		// Check is there is enrichment data for each key
@@ -245,9 +242,7 @@ void process (char * event, int resolve_names) {
 							if (!strcmp (props.propperties[i].targets[j].name, valueVal)) {
 								for (k = 0; k < props.propperties[i].targets[j].len; k++) {
 									add_enrich (props.propperties[i].targets[j].key_vals[k].key,
-									            strlen (props.propperties[i].targets[j].key_vals[k].key),
-									            props.propperties[i].targets[j].key_vals[k].val,
-									            strlen (props.propperties[i].targets[j].key_vals[k].val));
+									            props.propperties[i].targets[j].key_vals[k].val);
 								}
 								break;
 							}
@@ -262,8 +257,7 @@ void process (char * event, int resolve_names) {
 			if (!strcmp (keyVal, "src") || !strcmp (keyVal, "dst")) {
 				if (rdns (valueVal, host_name)) {
 					if (strlen (host_name) > 0) {
-						add_enrich ("target_name", strlen ("target_name"), host_name,
-						            strlen (host_name));
+						add_enrich ("target_name", host_name);
 					}
 				}
 			}
@@ -293,7 +287,7 @@ void process (char * event, int resolve_names) {
 		current_event_aux->key_val = (struct keyval_t *)calloc (1,
 		                             sizeof (struct keyval_t));
 
-		current_event_aux->key_val->key = (char *) keyVal;
+		current_event_aux->key_val->key = keyVal;
 		current_event_aux->key_val->val = valueVal;
 		current_event_aux->key_val->type = type;
 		current_event_aux->key_val->is_first_key = is_first_key;
@@ -357,8 +351,7 @@ void end_process() {
 				is_first_key = 0;
 
 				break;
-			case 3:
-				//add_null (&processed_event);
+			default:
 				break;
 			}
 		}

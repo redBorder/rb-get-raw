@@ -42,13 +42,11 @@ typedef enum {
 
 static int s_streamReformat = 0;
 static uint on_event = 0;
-static char * last_element = NULL;
 static char * output_filename = NULL;
 static time_t end_time_s = 0;
 static time_t start_time_s = 0;
 static int interval = 1;
 static yajl_handle hand;
-static yajl_gen g;
 static int granularity = 1;
 static int resolve_names = 0;
 static char * enrich_filename = NULL;
@@ -61,8 +59,8 @@ char * source = NULL;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-int get_time (const char * p_time, time_t * my_tm) {
-	struct tm aux = {0};
+static int get_time (const char * p_time, time_t * my_tm) {
+	struct tm aux = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
 	int rc = sscanf (p_time, "%d-%d-%dT%d:%d:%d",
 	                 &aux.tm_year, &aux.tm_mon, &aux.tm_mday,
@@ -102,17 +100,11 @@ static int reformat_boolean (void * ctx, int boolean) {
 
 static int reformat_number (void * ctx, const char * s, size_t l) {
 	yajl_gen g = (yajl_gen) ctx;
-
-	last_element = (char *)s + l;
-
 	GEN_AND_RETURN (yajl_gen_number (g, s, l));
 }
 static int reformat_string (void * ctx, const unsigned char * stringVal,
                             size_t stringLen) {
 	yajl_gen g = (yajl_gen) ctx;
-
-	last_element = (char *)stringVal + stringLen;
-
 	GEN_AND_RETURN (yajl_gen_string (g, stringVal, stringLen));
 }
 static int reformat_map_key (void * ctx, const unsigned char * stringVal,
@@ -175,14 +167,13 @@ static yajl_callbacks callbacks = {
 	reformat_end_array
 };
 
-static size_t WriteMemoryCallback (void *contents, size_t size, size_t nmemb,
-                                   void *userp) {
+static size_t WriteMemoryCallback (void *contents, size_t size, size_t nmemb) {
 	size_t realsize = size * nmemb;
 	yajl_parse (hand, (const unsigned char *) contents, realsize);
 	return realsize;
 }
 
-void rb_get_raw_print_usage() {
+static void rb_get_raw_print_usage() {
 	printf (
 	    "Usage: rb_get_raw.rb -d data_source -s start_timestamp [-e end_timestamp] [-f enrichment_file_path]\n"
 	    "Get enrichment data from Druid in json format.\n"
@@ -220,7 +211,7 @@ void rb_get_raw_print_usage() {
 	);
 }
 
-void rb_get_raw_getopts (int argc, char* argv[]) {
+static void rb_get_raw_getopts (int argc, char* argv[]) {
 
 	int c;
 
@@ -297,8 +288,8 @@ void rb_get_raw_getopts (int argc, char* argv[]) {
 	}
 }
 
-int gen_query0 (char *dst, size_t dst_sz, char * start_interval_str,
-                char * end_interval_str) {
+static int gen_query0 (char *dst, size_t dst_sz, char * start_interval_str,
+                       char * end_interval_str) {
 
 	char * dimensions = NULL;
 	char * aggregations = NULL;
@@ -355,6 +346,10 @@ int gen_query0 (char *dst, size_t dst_sz, char * start_interval_str,
 		               "\"fieldName\": \"followers\""
 		               "}]";
 		break;
+	default:
+		dimensions = "";
+		aggregations = "";
+		break;
 	}
 
 	return snprintf (dst, dst_sz, "{"
@@ -377,20 +372,21 @@ int gen_query0 (char *dst, size_t dst_sz, char * start_interval_str,
 
 }
 
-char *gen_query (char * start_interval_str,
-                 char * end_interval_str) {
+static char *gen_query (char * start_interval_str,
+                        char * end_interval_str) {
 	const int dst_sz = gen_query0 (NULL, 0, start_interval_str, end_interval_str);
 	// TODO error treatment
 
-	char * ret = calloc (dst_sz + 1, 1);
+	char * ret = calloc (dst_sz + 1.0, 1);
 	// TODO error treatment
-	gen_query0 (ret, dst_sz + 1, start_interval_str, end_interval_str);
+	gen_query0 (ret, dst_sz + 1.0, start_interval_str, end_interval_str);
 	return ret;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 int main (int argc, char * argv[]) {
 
+	yajl_gen g;
 	dns_init (&dns_defctx, 1);
 	int retval = 0;
 

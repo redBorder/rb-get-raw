@@ -25,12 +25,12 @@ struct dns_cache_t {
 };
 
 void event_putc (struct event_t * event, char c);
-void event_puts (struct event_t * event, char * s, size_t len);
-void add_key (struct event_t * event, char * new_key, size_t len,
+void event_puts (struct event_t * event, const char * s, size_t len);
+void add_key (struct event_t * event, const char * new_key, size_t len,
               int first_key);
 void add_number (struct event_t * event, char * new_number,
                  size_t len);
-void add_string (struct event_t * event, char * new_string, size_t len);
+void add_string (struct event_t * event, const char * new_string, size_t len);
 void add_null (struct event_t * event);
 int rdns (char * string_val, char * host);
 void add_cache (char * ip, char * name);
