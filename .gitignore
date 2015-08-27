@@ -1,3 +1,8 @@
 node_modules/
 tmp/
 rb_get_raw
+*.o
+*.d
+*.cache
+*.old
+*.log
