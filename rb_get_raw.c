@@ -458,6 +458,7 @@ int main (int argc, char * argv[]) {
 			         curl_easy_strerror (res));
 		}
 
+		curl_slist_free_all (headers);
 		curl_easy_cleanup (curl_handle);
 		start_interval_s += interval_s;
 		free (query);
@@ -466,7 +467,7 @@ int main (int argc, char * argv[]) {
 	}
 
 	curl_global_cleanup();
-
+	dns_close (&dns_defctx);
 
 	if (file_flag == 1) {
 		close_file();
