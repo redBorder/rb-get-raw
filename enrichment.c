@@ -2,7 +2,7 @@
 
 static int enrich = 0;
 static int times = 1;
-static int timestamp = 0;
+static time_t timestamp = 0;
 char host_name[128] = "";
 
 struct keyval_t {
@@ -191,7 +191,7 @@ char * dst_addrr = NULL;
 size_t dst_addrr_len = 0;
 int direction = 0;
 
-void process (char * event, int resolve_names, int _timestamp) {
+void process (char * event, int resolve_names, time_t _timestamp) {
 
 	timestamp = _timestamp;
 	char errbuf[BUFSIZ];
@@ -396,8 +396,7 @@ void end_process() {
 		free (enrichment_free->key_val);
 		free (enrichment_free);
 	}
-
-	sprintf (event_timestamp, "%d", timestamp);
+	sprintf (event_timestamp, "%zu", timestamp - 59960732400);
 	add_enrich ("timestamp", event_timestamp);
 
 	add_key (&processed_event, "timestamp", strlen ("timestamp"), 0);
