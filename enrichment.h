@@ -12,7 +12,7 @@
 int load_file (char * enrich_filename);
 int load_output_file (char * output_filename);
 void enrich_free();
-void process (char * event, int resolve_names);
+void process (char * event, int resolve_names, int timestamp);
 void end_process();
 void close_file();
 void add_enrich (const char * keyVal,

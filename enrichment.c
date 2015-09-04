@@ -2,8 +2,8 @@
 
 static int enrich = 0;
 static int times = 1;
+static int timestamp = 0;
 char host_name[128] = "";
-
 
 struct keyval_t {
 	int is_first_key;
@@ -191,8 +191,9 @@ char * dst_addrr = NULL;
 size_t dst_addrr_len = 0;
 int direction = 0;
 
-void process (char * event, int resolve_names) {
+void process (char * event, int resolve_names, int _timestamp) {
 
+	timestamp = _timestamp;
 	char errbuf[BUFSIZ];
 	yajl_val node = yajl_tree_parse ((const char *) event, errbuf, sizeof (errbuf));
 
@@ -215,7 +216,6 @@ void process (char * event, int resolve_names) {
 
 	// Iterate through propperties
 	for (p = 0; p < len; p++) {
-
 
 		const char * keyVal = YAJL_GET_OBJECT (root)->keys[p];
 		char * valueVal = NULL;
@@ -308,6 +308,7 @@ int eventos = 0;
 
 void end_process() {
 
+	char event_timestamp[BUFSIZ];
 	struct event_t processed_event = {NULL, 0, 0};
 	struct keyval_t_list * current_event_aux  = current_event;
 	struct keyval_t_list * current_event_free  = current_event;
@@ -395,6 +396,12 @@ void end_process() {
 		free (enrichment_free->key_val);
 		free (enrichment_free);
 	}
+
+	sprintf (event_timestamp, "%d", timestamp);
+	add_enrich ("timestamp", event_timestamp);
+
+	add_key (&processed_event, "timestamp", strlen ("timestamp"), 0);
+	add_number (&processed_event, event_timestamp, strlen (event_timestamp));
 
 	event_putc (&processed_event, '}');
 	event_putc (&processed_event, '\n');

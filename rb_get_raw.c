@@ -42,6 +42,7 @@ typedef enum {
 
 static int s_streamReformat = 0;
 static uint on_event = 0;
+static uint on_timestamp = 0;
 static char * output_filename = NULL;
 static time_t end_time_s = 0;
 static time_t start_time_s = 0;
@@ -52,6 +53,9 @@ static int resolve_names = 0;
 static char * enrich_filename = NULL;
 static char * host = NULL;
 static char * url = NULL;
+static char * timestamp = NULL;
+static time_t timestamp_t = 0;
+
 static SERVICE service = 0;
 
 int file_flag = 0;
@@ -105,16 +109,26 @@ static int reformat_number (void * ctx, const char * s, size_t l) {
 static int reformat_string (void * ctx, const unsigned char * stringVal,
                             size_t stringLen) {
 	yajl_gen g = (yajl_gen) ctx;
+	if (on_timestamp) {
+		timestamp = calloc (stringLen + 1, sizeof (char));
+		strncpy (timestamp, (char *) stringVal, stringLen);
+		timestamp[stringLen] = '\0';
+		on_timestamp = 0;
+	}
 	GEN_AND_RETURN (yajl_gen_string (g, stringVal, stringLen));
 }
 static int reformat_map_key (void * ctx, const unsigned char * stringVal,
                              size_t stringLen) {
 	yajl_gen g = (yajl_gen) ctx;
 
-	if (!on_event
-	        && !strncmp ((const char *)stringVal, "event", strlen ("event"))) {
+	if (!on_event) {
+		if (!strncmp ((const char *)stringVal, "event", strlen ("event"))) {
+			on_event = 1;
+		}
 
-		on_event = 1;
+		if (!strncmp ((const char *)stringVal, "timestamp", strlen ("timestamp"))) {
+			on_timestamp = 1;
+		}
 	}
 
 	GEN_AND_RETURN (yajl_gen_string (g, stringVal, stringLen));
@@ -140,7 +154,9 @@ static int reformat_end_map (void * ctx) {
 	if (on_event) {
 		yajl_gen_get_buf (g, (const unsigned char **)&event, &aux_size);
 		on_event = 0;
-		process ((char *)event + 1, resolve_names);
+		get_time (timestamp, &timestamp_t);
+		process ((char *)event + 1, resolve_names, timestamp_t);
+		free (timestamp);
 	}
 
 	GEN_AND_RETURN (rc);
