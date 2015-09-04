@@ -58,7 +58,7 @@ int load_file (char * enrich_filename) {
 	size_t rd;
 	char errbuf[1024];
 	FILE * file = NULL;
-	unsigned char fileData[65536];
+	unsigned char fileData[4 * 1024 * 1024];
 
 	if (enrich_filename != NULL) {
 		if ( ! (file = fopen (enrich_filename, "r"))) {
@@ -220,85 +220,84 @@ void process (char * event, int resolve_names) {
 		const char * keyVal = YAJL_GET_OBJECT (root)->keys[p];
 		char * valueVal = NULL;
 
-		if (YAJL_IS_NULL (YAJL_GET_OBJECT (root)->values[p])) {
-			valueVal = "null";
-			type = 3;
-		} else if (YAJL_IS_NUMBER (YAJL_GET_OBJECT (root)->values[p])) {
-			valueVal = YAJL_GET_NUMBER ( YAJL_GET_OBJECT (root)->values[p]);
-			type = 2;
-		} else {
-			valueVal = YAJL_GET_STRING ( YAJL_GET_OBJECT (root)->values[p]);
-			type = 1;
-		}
+		if (!YAJL_IS_NULL (YAJL_GET_OBJECT (root)->values[p])) {
 
-		size_t i = 0;
-		size_t j = 0;
-		size_t k = 0;
+			if (YAJL_IS_NUMBER (YAJL_GET_OBJECT (root)->values[p])) {
+				valueVal = YAJL_GET_NUMBER ( YAJL_GET_OBJECT (root)->values[p]);
+				type = 2;
+			} else {
+				valueVal = YAJL_GET_STRING ( YAJL_GET_OBJECT (root)->values[p]);
+				type = 1;
+			}
 
+			size_t i = 0;
+			size_t j = 0;
+			size_t k = 0;
 
-		// Check is there is enrichment data for each key
-		if (enrich) {
-			if (YAJL_IS_STRING (YAJL_GET_OBJECT (root)->values[p])) {
-				for (i = 0; i < props.len; i++) {
-					if (!strcmp (props.propperties[i].name, keyVal)) {
-						for (j = 0; j < props.propperties[i].targets->len ; j++) {
-							if (!strcmp (props.propperties[i].targets[j].name, valueVal)) {
-								for (k = 0; k < props.propperties[i].targets[j].len; k++) {
-									add_enrich (props.propperties[i].targets[j].key_vals[k].key,
-									            props.propperties[i].targets[j].key_vals[k].val);
+			// Check is there is enrichment data for each key
+			if (enrich) {
+				if (YAJL_IS_STRING (YAJL_GET_OBJECT (root)->values[p])) {
+					for (i = 0; i < props.len; i++) {
+						if (!strcmp (props.propperties[i].name, keyVal)) {
+							for (j = 0; j < props.propperties[i].targets->len ; j++) {
+								if (!strcmp (props.propperties[i].targets[j].name, valueVal)) {
+									for (k = 0; k < props.propperties[i].targets[j].len; k++) {
+										add_enrich (props.propperties[i].targets[j].key_vals[k].key,
+										            props.propperties[i].targets[j].key_vals[k].val);
+									}
+									break;
 								}
-								break;
 							}
 						}
 					}
 				}
 			}
-		}
 
-		if (resolve_names) {
-			if (!strcmp (keyVal, "src") || !strcmp (keyVal, "dst")) {
-				if (rdns (valueVal, host_name)) {
-					if (strlen (host_name) > 0) {
-						add_enrich ("target_name", host_name);
+			if (resolve_names) {
+				if (!strcmp (keyVal, "src") || !strcmp (keyVal, "dst")) {
+					if (rdns (valueVal, host_name)) {
+						if (strlen (host_name) > 0) {
+							add_enrich ("target_name", host_name);
+						}
 					}
 				}
 			}
-		}
 
-		if (!strcmp (keyVal, "events")) {
-			if (type == 2) {
-				times = atoi (valueVal);
+			if (!strcmp (keyVal, "events")) {
+				if (type == 2) {
+					times = atoi (valueVal);
+				}
 			}
-		}
 
-		struct keyval_t_list * current_event_aux = NULL;
+			struct keyval_t_list * current_event_aux = NULL;
 
-		if (current_event == NULL) {
-			current_event = (struct keyval_t_list *) calloc (1,
-			                sizeof (struct keyval_t_list));
-			current_event->next = NULL;
-			current_event_aux = current_event;
-		} else {
+			if (current_event == NULL) {
+				current_event = (struct keyval_t_list *) calloc (1,
+				                sizeof (struct keyval_t_list));
+				current_event->next = NULL;
+				current_event_aux = current_event;
+			} else {
 
-			current_event_aux = current_event;
+				current_event_aux = current_event;
 
-			while (current_event_aux->next != NULL) {
+				while (current_event_aux->next != NULL) {
+					current_event_aux = current_event_aux->next;
+				}
+
+				current_event_aux->next = (struct keyval_t_list *) calloc (1,
+				                          sizeof (struct keyval_t_list));
 				current_event_aux = current_event_aux->next;
+				current_event_aux->next = NULL;
 			}
 
-			current_event_aux->next = (struct keyval_t_list *) calloc (1,
-			                          sizeof (struct keyval_t_list));
-			current_event_aux = current_event_aux->next;
-			current_event_aux->next = NULL;
+			current_event_aux->key_val = (struct keyval_t *)calloc (1,
+			                             sizeof (struct keyval_t));
+
+			current_event_aux->key_val->key = keyVal;
+			current_event_aux->key_val->val = valueVal;
+			current_event_aux->key_val->type = type;
+			current_event_aux->key_val->is_first_key = is_first_key;
 		}
-
-		current_event_aux->key_val = (struct keyval_t *)calloc (1,
-		                             sizeof (struct keyval_t));
-
-		current_event_aux->key_val->key = keyVal;
-		current_event_aux->key_val->val = valueVal;
-		current_event_aux->key_val->type = type;
-		current_event_aux->key_val->is_first_key = is_first_key;
 	}
 
 	end_process();
