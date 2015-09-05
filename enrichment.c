@@ -397,9 +397,7 @@ void end_process() {
 		free (enrichment_free);
 	}
 
-	sprintf (event_timestamp, "%lu", (long) timestamp - 59960818800);
-	add_enrich ("timestamp", event_timestamp);
-
+	sprintf (event_timestamp, "%tu", timestamp);
 	add_key (&processed_event, "timestamp", strlen ("timestamp"), 0);
 	add_number (&processed_event, event_timestamp, strlen (event_timestamp));
 
