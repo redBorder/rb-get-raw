@@ -100,7 +100,6 @@ int load_file (char * enrich_filename) {
 		// Iterate through propperties
 		for (i = 0; i < YAJL_GET_OBJECT (root)->len; i++) {
 			props.propperties[i].name = YAJL_GET_OBJECT (root)->keys[i];
-			// printf ("%s\n", props.propperties[i].name);
 
 			// Go to the propperty
 			const char * propperty_path[] = { YAJL_GET_OBJECT (root)->keys[i],
@@ -115,8 +114,6 @@ int load_file (char * enrich_filename) {
 			for (j = 0; j < YAJL_GET_OBJECT (propperty)->len; j++) {
 				props.propperties[i].targets[j].name = YAJL_GET_OBJECT (
 				        propperty)->keys[j];
-
-				// printf ("\t%s\n", props.propperties[i].targets[j].name);
 
 				// Go to the target
 				const char * target_path[] = { YAJL_GET_OBJECT (root)->keys[i],
@@ -135,8 +132,6 @@ int load_file (char * enrich_filename) {
 					props.propperties[i].targets[j].key_vals[k].val = YAJL_GET_STRING (
 					            YAJL_GET_OBJECT (
 					                target)->values[k]);
-					// printf ("\t\t%s: %s\n", props.propperties[i].targets[j].key_vals[k].key,
-					// props.propperties[i].targets[j].key_vals[k].val);
 				}
 			}
 		}
@@ -392,11 +387,9 @@ void end_process() {
 		enrichment_aux = enrichment_aux->next;
 	}
 
-	sprintf (event_timestamp, "%zu", timestamp - 59960732400);
-	add_enrich ("timestamp", event_timestamp);
-
-	add_key (&processed_event, "timestamp", strlen ("timestamp"), 0);
-	add_number (&processed_event, event_timestamp, strlen (event_timestamp));
+	sprintf (event_timestamp, "%tu", timestamp);
+ 	add_key (&processed_event, "timestamp", strlen ("timestamp"), 0);
+ 	add_number (&processed_event, event_timestamp, strlen (event_timestamp));
 
 	while (enrichment != NULL) {
 		enrichment_free = enrichment;
