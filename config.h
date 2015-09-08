@@ -7,4 +7,4 @@
 // install
 #define WITH_INSTALL 1
 // gitversion
-#define GITVERSION "1.0.1-1-g310913"
+#define GITVERSION "1.0.1-2-g0be0ba"

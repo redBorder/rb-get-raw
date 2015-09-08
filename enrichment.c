@@ -238,7 +238,6 @@ void process (char * event, int resolve_names, time_t _timestamp) {
 						if (!strcmp (props.propperties[i].name, keyVal)) {
 							for (j = 0; j < props.propperties[i].len ; j++) {
 								if (!strcmp (props.propperties[i].targets[j].name, valueVal)) {
-									printf("%s\n", valueVal);
 									for (k = 0; k < props.propperties[i].targets[j].len; k++) {
 										add_enrich (props.propperties[i].targets[j].key_vals[k].key,
 										            props.propperties[i].targets[j].key_vals[k].val);
