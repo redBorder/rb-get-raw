@@ -70,6 +70,8 @@ static int get_time (const char * p_time, time_t * my_tm) {
 	                 &aux.tm_year, &aux.tm_mon, &aux.tm_mday,
 	                 &aux.tm_hour, &aux.tm_min, &aux.tm_sec);
 
+	*(&aux.tm_isdst) = -1;
+
 	if ( rc == 1) {
 		*my_tm = aux.tm_year;
 		return 0;
@@ -79,7 +81,15 @@ static int get_time (const char * p_time, time_t * my_tm) {
 		return 1;
 	}
 
+	time_t t = time(NULL);
+  	struct tm lt = {0};
+
+  	localtime_r(&t, &lt);
+
+	*(&aux.tm_year) -= 1900;
+	*(&aux.tm_mon) -= 1;
 	*my_tm = mktime (&aux);
+	*my_tm += lt.tm_gmtoff;
 
 	return 0;
 }
