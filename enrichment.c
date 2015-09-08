@@ -1,8 +1,11 @@
 #include "enrichment.h"
+#include <librd/rd.h>
+#include <librd/rdfile.h>
 
 static int enrich = 0;
 static int times = 1;
 static time_t timestamp = 0;
+static yajl_val node;
 char host_name[128] = "";
 
 struct keyval_t {
@@ -53,12 +56,11 @@ int load_output_file (char * output_filename) {
 }
 
 int load_file (char * enrich_filename) {
-
-	static yajl_val node;
-	size_t rd;
 	char errbuf[1024];
 	FILE * file = NULL;
-	unsigned char fileData[4 * 1024 * 1024];
+	char * fileData = NULL;
+	int fileData_len = 0;
+
 
 	if (enrich_filename != NULL) {
 		if ( ! (file = fopen (enrich_filename, "r"))) {
@@ -68,20 +70,9 @@ int load_file (char * enrich_filename) {
 		enrich = 1;
 
 		/* null plug buffers */
-		memset (fileData, 0, sizeof (char));
 		memset (errbuf, 0, sizeof (char));
 
-		/* read the entire config file */
-		rd = fread ((void *) fileData, 1, sizeof (fileData) - 1, file);
-
-		/* file read error handling */
-		if (rd == 0 && !feof (stdin)) {
-			fprintf (stderr, "error encountered on file read\n");
-			return 1;
-		} else if (rd >= sizeof (fileData) - 1) {
-			fprintf (stderr, "config file too big\n");
-			return 1;
-		}
+		fileData = rd_file_read (enrich_filename, &fileData_len);
 
 		/* we have the whole config file in memory.  let's parse it ... */
 		node = yajl_tree_parse ((const char *) fileData, errbuf, sizeof (errbuf));
@@ -116,6 +107,7 @@ int load_file (char * enrich_filename) {
 			                                  (const char *) 0
 			                                };
 			yajl_val propperty = yajl_tree_get (root, propperty_path, yajl_t_object);
+			props.propperties[i].len = YAJL_GET_OBJECT (propperty)->len;
 			props.propperties[i].targets = (struct target_t *) calloc (YAJL_GET_OBJECT (
 			                                   propperty)->len, sizeof (struct target_t));
 
@@ -123,6 +115,7 @@ int load_file (char * enrich_filename) {
 			for (j = 0; j < YAJL_GET_OBJECT (propperty)->len; j++) {
 				props.propperties[i].targets[j].name = YAJL_GET_OBJECT (
 				        propperty)->keys[j];
+
 				// printf ("\t%s\n", props.propperties[i].targets[j].name);
 
 				// Go to the target
@@ -147,6 +140,14 @@ int load_file (char * enrich_filename) {
 				}
 			}
 		}
+	}
+
+	if (fileData != NULL) {
+		free (fileData);
+	}
+
+	if (file != NULL) {
+		fclose (file);
 	}
 
 	return 0;
@@ -195,9 +196,10 @@ void process (char * event, int resolve_names, time_t _timestamp) {
 
 	timestamp = _timestamp;
 	char errbuf[BUFSIZ];
-	yajl_val node = yajl_tree_parse ((const char *) event, errbuf, sizeof (errbuf));
+	yajl_val event_node = yajl_tree_parse ((const char *) event, errbuf,
+	                                       sizeof (errbuf));
 
-	if (node == NULL) {
+	if (event_node == NULL) {
 		fprintf (stderr, "parse_error: ");
 		if (strlen (errbuf)) fprintf (stderr, " %s", errbuf);
 		else fprintf (stderr, "unknown error");
@@ -206,7 +208,7 @@ void process (char * event, int resolve_names, time_t _timestamp) {
 	}
 
 	const char * root_path[] = { (const char *) 0 };
-	yajl_val root = yajl_tree_get (node, root_path, yajl_t_object);
+	yajl_val root = yajl_tree_get (event_node, root_path, yajl_t_object);
 
 	size_t len = YAJL_GET_OBJECT (root)->len;
 
@@ -301,7 +303,7 @@ void process (char * event, int resolve_names, time_t _timestamp) {
 	}
 
 	end_process();
-	yajl_tree_free (node);
+	yajl_tree_free (event_node);
 }
 
 int eventos = 0;
@@ -390,17 +392,18 @@ void end_process() {
 		enrichment_aux = enrichment_aux->next;
 	}
 
+	sprintf (event_timestamp, "%zu", timestamp - 59960732400);
+	add_enrich ("timestamp", event_timestamp);
+
+	add_key (&processed_event, "timestamp", strlen ("timestamp"), 0);
+	add_number (&processed_event, event_timestamp, strlen (event_timestamp));
+
 	while (enrichment != NULL) {
 		enrichment_free = enrichment;
 		enrichment = enrichment->next;
 		free (enrichment_free->key_val);
 		free (enrichment_free);
 	}
-	sprintf (event_timestamp, "%zu", timestamp - 59960732400);
-	add_enrich ("timestamp", event_timestamp);
-
-	add_key (&processed_event, "timestamp", strlen ("timestamp"), 0);
-	add_number (&processed_event, event_timestamp, strlen (event_timestamp));
 
 	event_putc (&processed_event, '}');
 	event_putc (&processed_event, '\n');
@@ -416,5 +419,19 @@ void end_process() {
 }
 
 void close_file () {
+	size_t i = 0;
+	size_t j = 0;
+
+	for (i = 0; i < props.len; i++) {
+
+		for (j = 0; j < props.propperties[i].len; j++) {
+			free (props.propperties[i].targets[j].key_vals);
+		}
+
+		free (props.propperties[i].targets);
+	}
+
+	free (props.propperties);
+	yajl_tree_free (node);
 	fclose (output_file);
 }

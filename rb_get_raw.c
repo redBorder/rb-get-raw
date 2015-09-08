@@ -485,6 +485,9 @@ int main (int argc, char * argv[]) {
 	curl_global_cleanup();
 	dns_close (&dns_defctx);
 
+	if (url != NULL)
+		free (url);
+
 	if (file_flag == 1) {
 		close_file();
 	}

@@ -32,5 +32,11 @@ function checks {
     mkl_lib_check --static=-lrdkafka "libudns" "" fail CC "-ludns" \
        "#include <udns.h>"
 
+    # Check that librd is available, and allow to link it statically.
+    mkl_meta_set "librd" "desc" "Magnus Edenhill's librd is available at http://github.com/edenhill/librd"
+    mkl_lib_check --static=-lrdkafka "librd" "" fail CC "-lrd -lpthread -lz -lrt" \
+    "#include <librd/rd.h>"
+
+
     mkl_in_list "$*" "--disable-optimization" || mkl_mkvar_append CPPFLAGS CPPFLAGS "-DNDEBUG"
 }
