@@ -35,11 +35,15 @@ typedef enum {
 	rb_monitor	= 4
 } SERVICE;
 
+typedef enum {
+	collapse		= 0,
+	expand			= 1
+} EVENT_MODE;
+
 #define STR_TYPE 1
 #define NUM_TYPE 2
 #define NULL_TYPE 3
 #define PATH "/druid/v2/?pretty=true"
-
 static int s_streamReformat = 0;
 static uint on_event = 0;
 static uint on_timestamp = 0;
@@ -57,6 +61,7 @@ static char * timestamp = NULL;
 static time_t timestamp_t = 0;
 
 static SERVICE service = 0;
+static EVENT_MODE event_mode = expand;
 
 int file_flag = 0;
 char * source = NULL;
@@ -70,7 +75,7 @@ static int get_time (const char * p_time, time_t * my_tm) {
 	                 &aux.tm_year, &aux.tm_mon, &aux.tm_mday,
 	                 &aux.tm_hour, &aux.tm_min, &aux.tm_sec);
 
-	*(&aux.tm_isdst) = -1;
+	* (&aux.tm_isdst) = -1;
 
 	if ( rc == 1) {
 		*my_tm = aux.tm_year;
@@ -81,13 +86,13 @@ static int get_time (const char * p_time, time_t * my_tm) {
 		return 1;
 	}
 
-	time_t t = time(NULL);
-  	struct tm lt = {0};
+	time_t t = time (NULL);
+	struct tm lt = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-  	localtime_r(&t, &lt);
+	localtime_r (&t, &lt);
 
-	*(&aux.tm_year) -= 1900;
-	*(&aux.tm_mon) -= 1;
+	* (&aux.tm_year) -= 1900;
+	* (&aux.tm_mon) -= 1;
 	*my_tm = mktime (&aux);
 	*my_tm += lt.tm_gmtoff;
 
@@ -165,7 +170,7 @@ static int reformat_end_map (void * ctx) {
 		yajl_gen_get_buf (g, (const unsigned char **)&event, &aux_size);
 		on_event = 0;
 		get_time (timestamp, &timestamp_t);
-		process ((char *)event + 1, resolve_names, timestamp_t);
+		process ((char *)event + 1, resolve_names, timestamp_t, event_mode);
 		free (timestamp);
 	}
 
@@ -431,6 +436,10 @@ int main (int argc, char * argv[]) {
 	time_t start_interval_s = 0;
 	start_interval_s = start_time_s;
 	char * query = NULL;
+
+	if (service == rb_flow) {
+		event_mode = collapse;
+	}
 
 	CURL *curl_handle;
 	CURLcode res;

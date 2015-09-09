@@ -6,6 +6,7 @@ static int enrich = 0;
 static int times = 1;
 static time_t timestamp = 0;
 static yajl_val node;
+static int expand_events = 0;
 char host_name[128] = "";
 
 struct keyval_t {
@@ -187,8 +188,10 @@ char * dst_addrr = NULL;
 size_t dst_addrr_len = 0;
 int direction = 0;
 
-void process (char * event, int resolve_names, time_t _timestamp) {
+void process (char * event, int resolve_names, time_t _timestamp,
+              int _expand_events) {
 
+	expand_events = _expand_events;
 	timestamp = _timestamp;
 	char errbuf[BUFSIZ];
 	yajl_val event_node = yajl_tree_parse ((const char *) event, errbuf,
@@ -319,7 +322,7 @@ void end_process() {
 
 	while (current_event_aux != NULL) {
 
-		if (strcmp (current_event_aux->key_val->key, "events")) {
+		if (/*strcmp (current_event_aux->key_val->key, "events")*/1) {
 
 			enrichment_aux = enrichment;
 
@@ -388,8 +391,8 @@ void end_process() {
 	}
 
 	sprintf (event_timestamp, "%tu", timestamp);
- 	add_key (&processed_event, "timestamp", strlen ("timestamp"), 0);
- 	add_number (&processed_event, event_timestamp, strlen (event_timestamp));
+	add_key (&processed_event, "timestamp", strlen ("timestamp"), 0);
+	add_number (&processed_event, event_timestamp, strlen (event_timestamp));
 
 	while (enrichment != NULL) {
 		enrichment_free = enrichment;
@@ -401,7 +404,13 @@ void end_process() {
 	event_putc (&processed_event, '}');
 	event_putc (&processed_event, '\n');
 	event_putc (&processed_event, '\0');
-	for (i = 0; i < times ; i++) {
+
+	if (expand_events) {
+		for (i = 0; i < times ; i++) {
+			fwrite (processed_event.str, sizeof (char), processed_event.length - 1,
+			        output_file);
+		}
+	} else {
 		fwrite (processed_event.str, sizeof (char), processed_event.length - 1,
 		        output_file);
 	}
