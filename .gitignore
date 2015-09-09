@@ -6,3 +6,5 @@ rb_get_raw
 *.cache
 *.old
 *.log
+config.h
+Makefile.config
