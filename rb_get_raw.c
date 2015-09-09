@@ -125,8 +125,7 @@ static int reformat_string (void * ctx, const unsigned char * stringVal,
                             size_t stringLen) {
 	yajl_gen g = (yajl_gen) ctx;
 	if (on_timestamp) {
-		timestamp = calloc (stringLen + 1, sizeof (char));
-		strncpy (timestamp, (char *) stringVal, stringLen);
+		timestamp = strdup ((const char*) stringVal);
 		timestamp[stringLen] = '\0';
 		on_timestamp = 0;
 	}
