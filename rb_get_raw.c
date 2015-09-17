@@ -244,6 +244,7 @@ static void rb_get_raw_print_usage() {
 static void rb_get_raw_getopts (int argc, char* argv[]) {
 
 	int c;
+	int error = 0;
 
 	end_time_s = time (NULL);
 
@@ -279,10 +280,17 @@ static void rb_get_raw_getopts (int argc, char* argv[]) {
 			host = optarg;
 			break;
 		case '?':
-			return;
+			error = 1;
+			break;
 		default:
 			abort ();
 		}
+
+	if (error) {
+		rb_get_raw_print_usage();
+		printf("\nUnrecognized option \"%c\"\n", optopt);
+		exit(1);
+	}
 
 	if (start_time_s == 0 ) {
 		rb_get_raw_print_usage();
