@@ -53,7 +53,14 @@ void add_number (struct event_t * event, char * new_number,
 
 void add_string (struct event_t * event, const char * new_string, size_t len) {
 	event_putc (event, '\"');
-	event_puts (event, new_string, len);
+	size_t i;
+	for(i=0;i<len;++i) {
+		if('\\' == new_string[i]) {
+			// Escape char
+			event_putc(event, '\\');
+		}
+		event_putc(event,new_string[i]);
+	}
 	event_putc (event, '\"');
 }
 

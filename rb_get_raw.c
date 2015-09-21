@@ -25,6 +25,8 @@
 #include <udns.h>
 #include <getopt.h>
 #include <time.h>
+#include <unistd.h>
+#include <signal.h>
 
 #include "enrichment.h"
 
@@ -59,6 +61,9 @@ static char * host = NULL;
 static char * url = NULL;
 static char * timestamp = NULL;
 static time_t timestamp_t = 0;
+static int events = 0;
+static char * log_file = NULL;
+static FILE * output = NULL;
 
 static SERVICE service = 0;
 static EVENT_MODE event_mode = expand;
@@ -67,6 +72,13 @@ int file_flag = 0;
 char * source = NULL;
 
 ////////////////////////////////////////////////////////////////////////////////
+
+static void intHandler () {
+	if (output != NULL) {
+		fclose (output);
+	}
+	exit (1);
+}
 
 static int get_time (const char * p_time, time_t * my_tm) {
 	struct tm aux = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -170,6 +182,7 @@ static int reformat_end_map (void * ctx) {
 		on_event = 0;
 		get_time (timestamp, &timestamp_t);
 		process ((char *)event + 1, resolve_names, timestamp_t, event_mode);
+		events++;
 		free (timestamp);
 	}
 
@@ -217,6 +230,7 @@ static void rb_get_raw_print_usage() {
 	    "\t -o [OPTIONAL]\t output file instead of stdout\n"
 	    "\t -n [OPTIONAL]\t resolve host names\n"
 	    "\t -h [OPTIONAL]\t DRUID host. If not provided, get from zookeper (TODO)\n"
+	    "\t -l [OPTIONAL]\t Write output to log file. If not provided, print to stdout\n"
 	    "\n"
 	    "-------------------------------------\n"
 	    "Enrichment JSON File Format:\n"
@@ -244,11 +258,12 @@ static void rb_get_raw_print_usage() {
 static void rb_get_raw_getopts (int argc, char* argv[]) {
 
 	int c;
+	int error = 0;
 
 	end_time_s = time (NULL);
 
 	opterr = 0;
-	while ((c = getopt (argc, argv, "no:d:s:e:i:g:f:h:?")) != -1)
+	while ((c = getopt (argc, argv, "no:d:s:e:i:g:f:h:l:?")) != -1)
 		switch (c) {
 		case 'o':
 			file_flag = 1;
@@ -278,16 +293,36 @@ static void rb_get_raw_getopts (int argc, char* argv[]) {
 		case 'h':
 			host = optarg;
 			break;
+		case 'l':
+			log_file = optarg;
+			break;
 		case '?':
-			return;
+			error = 1;
+			break;
 		default:
 			abort ();
 		}
+
+	if (error) {
+		rb_get_raw_print_usage();
+		printf ("\nUnrecognized option \"%c\"\n", optopt);
+		exit (1);
+	}
 
 	if (start_time_s == 0 ) {
 		rb_get_raw_print_usage();
 		printf ("\nInvalid start time\n");
 		exit (1);
+	}
+
+	if (log_file != NULL) {
+		output = fopen (log_file, "w");
+		if (output == NULL) {
+			printf ("Error opening log file\n");
+			exit (1);
+		}
+	} else {
+		output = stdout;
 	}
 
 	if (source != NULL) {
@@ -419,6 +454,14 @@ int main (int argc, char * argv[]) {
 	yajl_gen g;
 	dns_init (&dns_defctx, 1);
 	int retval = 0;
+	int errors = 0;
+	int retries = 0;
+
+	struct sigaction act;
+	act.sa_handler = intHandler;
+	act.sa_flags = 0;
+	sigemptyset (&act.sa_mask);
+	sigaction (SIGINT, &act, NULL);
 
 	rb_get_raw_getopts (argc, argv);
 
@@ -441,7 +484,7 @@ int main (int argc, char * argv[]) {
 	}
 
 	CURL *curl_handle;
-	CURLcode res;
+	long http_code = 0;
 
 	curl_global_init (CURL_GLOBAL_ALL);
 
@@ -468,8 +511,8 @@ int main (int argc, char * argv[]) {
 
 		query = gen_query (start_interval_str, end_interval_str);
 		if (file_flag) {
-			printf ("Getting data from druid [ %s/%s ]\n", start_interval_str,
-			        end_interval_str);
+			fprintf (output, "Getting data from druid [ %s/%s ]\n", start_interval_str,
+			         end_interval_str);
 		}
 		curl_handle = curl_easy_init();
 
@@ -481,15 +524,34 @@ int main (int argc, char * argv[]) {
 		                             "Content-Type: application/json");
 		headers = curl_slist_append (headers, "charsets: utf-8");
 		curl_easy_setopt (curl_handle, CURLOPT_HTTPHEADER, headers);
-
+		curl_easy_setopt (curl_handle, CURLOPT_TIMEOUT, 2L);
 		curl_easy_setopt (curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-
 		curl_easy_setopt (curl_handle, CURLOPT_POSTFIELDS, query);
-		res = curl_easy_perform (curl_handle);
 
-		if (res != CURLE_OK) {
-			fprintf (stderr, "curl_easy_perform() failed: %s\n",
-			         curl_easy_strerror (res));
+		events = 0;
+		retries = 0;
+
+		while (events == 0) {
+			curl_easy_perform (curl_handle);
+			curl_easy_getinfo (curl_handle, CURLINFO_RESPONSE_CODE, &http_code);
+
+			if (http_code != 200) {
+				errors++;
+				fprintf (output, "HTTP Error, retrying...\n");
+				sleep (1);
+			} else {
+				retries++;
+				fprintf (output, "No events, retrying...\n");
+				sleep (1);
+			}
+
+			if (errors >= 10) {
+				exit (1);
+			}
+
+			if (retries >= 2) {
+				break;
+			}
 		}
 
 		curl_slist_free_all (headers);
@@ -512,3 +574,5 @@ int main (int argc, char * argv[]) {
 
 	return retval;
 }
+
+
