@@ -25,6 +25,7 @@
 #include <udns.h>
 #include <getopt.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "enrichment.h"
 
@@ -59,6 +60,7 @@ static char * host = NULL;
 static char * url = NULL;
 static char * timestamp = NULL;
 static time_t timestamp_t = 0;
+static int events = 0;
 
 static SERVICE service = 0;
 static EVENT_MODE event_mode = expand;
@@ -170,6 +172,7 @@ static int reformat_end_map (void * ctx) {
 		on_event = 0;
 		get_time (timestamp, &timestamp_t);
 		process ((char *)event + 1, resolve_names, timestamp_t, event_mode);
+		events++;
 		free (timestamp);
 	}
 
@@ -288,8 +291,8 @@ static void rb_get_raw_getopts (int argc, char* argv[]) {
 
 	if (error) {
 		rb_get_raw_print_usage();
-		printf("\nUnrecognized option \"%c\"\n", optopt);
-		exit(1);
+		printf ("\nUnrecognized option \"%c\"\n", optopt);
+		exit (1);
 	}
 
 	if (start_time_s == 0 ) {
@@ -427,6 +430,8 @@ int main (int argc, char * argv[]) {
 	yajl_gen g;
 	dns_init (&dns_defctx, 1);
 	int retval = 0;
+	int errors = 0;
+	int retries = 0;
 
 	rb_get_raw_getopts (argc, argv);
 
@@ -493,11 +498,29 @@ int main (int argc, char * argv[]) {
 		curl_easy_setopt (curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
 
 		curl_easy_setopt (curl_handle, CURLOPT_POSTFIELDS, query);
-		res = curl_easy_perform (curl_handle);
 
-		if (res != CURLE_OK) {
+		events = 0;
+		retries = 0;
+
+		while (events == 0) {
+			res = curl_easy_perform (curl_handle);
+			retries++;
+			if (retries > 0 && retries < 10 && events == 0) {
+				printf ("No events, retrying...\n");
+			} else {
+				break;
+			}
+		}
+
+		errors = 0;
+		while (res != CURLE_OK) {
 			fprintf (stderr, "curl_easy_perform() failed: %s\n",
 			         curl_easy_strerror (res));
+			if (errors < 10) {
+				errors++;
+			} else {
+				exit (1);
+			}
 		}
 
 		curl_slist_free_all (headers);
