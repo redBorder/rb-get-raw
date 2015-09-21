@@ -454,7 +454,7 @@ int main (int argc, char * argv[]) {
 	}
 
 	CURL *curl_handle;
-	CURLcode res;
+	long http_code = 0;
 
 	curl_global_init (CURL_GLOBAL_ALL);
 
@@ -494,32 +494,33 @@ int main (int argc, char * argv[]) {
 		                             "Content-Type: application/json");
 		headers = curl_slist_append (headers, "charsets: utf-8");
 		curl_easy_setopt (curl_handle, CURLOPT_HTTPHEADER, headers);
-
+		curl_easy_setopt (curl_handle, CURLOPT_TIMEOUT, 2L);
 		curl_easy_setopt (curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-
 		curl_easy_setopt (curl_handle, CURLOPT_POSTFIELDS, query);
 
 		events = 0;
 		retries = 0;
 
 		while (events == 0) {
-			res = curl_easy_perform (curl_handle);
-			retries++;
-			if (retries > 0 && retries < 10 && events == 0) {
-				printf ("No events, retrying...\n");
-			} else {
-				break;
-			}
-		}
+			curl_easy_perform (curl_handle);
+			curl_easy_getinfo (curl_handle, CURLINFO_RESPONSE_CODE, &http_code);
 
-		errors = 0;
-		while (res != CURLE_OK) {
-			fprintf (stderr, "curl_easy_perform() failed: %s\n",
-			         curl_easy_strerror (res));
-			if (errors < 10) {
+			if (http_code != 200) {
 				errors++;
+				printf ("HTTP Error, retrying...\n");
+				sleep (1);
 			} else {
+				retries++;
+				printf ("No events, retrying...\n");
+				sleep (1);
+			}
+
+			if (errors >= 10) {
 				exit (1);
+			}
+
+			if (retries >= 2) {
+				break;
 			}
 		}
 
