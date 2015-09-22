@@ -455,7 +455,6 @@ int main (int argc, char * argv[]) {
 	dns_init (&dns_defctx, 1);
 	int retval = 0;
 	int errors = 0;
-	int retries = 0;
 
 	struct sigaction act;
 	act.sa_handler = intHandler;
@@ -524,35 +523,28 @@ int main (int argc, char * argv[]) {
 		                             "Content-Type: application/json");
 		headers = curl_slist_append (headers, "charsets: utf-8");
 		curl_easy_setopt (curl_handle, CURLOPT_HTTPHEADER, headers);
-		curl_easy_setopt (curl_handle, CURLOPT_TIMEOUT, 2L);
 		curl_easy_setopt (curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
 		curl_easy_setopt (curl_handle, CURLOPT_POSTFIELDS, query);
 
 		events = 0;
-		retries = 0;
 
 		while (events == 0) {
 			curl_easy_perform (curl_handle);
 			curl_easy_getinfo (curl_handle, CURLINFO_RESPONSE_CODE, &http_code);
 
-			if (http_code != 200) {
+			if (events == 0 && http_code >= 400) {
 				errors++;
-				fprintf (output, "HTTP Error, retrying...\n");
-				sleep (1);
-			} else {
-				retries++;
-				fprintf (output, "No events, retrying...\n");
-				sleep (1);
+				fprintf (output, "HTTP Error [%ld], sleeping 30 seconds...\n", http_code);
+				sleep (30);
 			}
 
-			if (errors >= 10) {
+			if (errors >= 2) {
+				fprintf (output, "Too many errors, exiting...\n");
 				exit (1);
 			}
-
-			if (retries >= 2) {
-				break;
-			}
 		}
+
+		printf ("GOT %d EVENTS\n", events);
 
 		curl_slist_free_all (headers);
 		curl_easy_cleanup (curl_handle);
@@ -570,6 +562,10 @@ int main (int argc, char * argv[]) {
 
 	if (file_flag == 1) {
 		close_file();
+	}
+
+	if (output != NULL) {
+		fclose (output);
 	}
 
 	return retval;
