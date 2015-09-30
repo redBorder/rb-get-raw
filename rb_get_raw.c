@@ -536,6 +536,8 @@ int main (int argc, char * argv[]) {
 				errors++;
 				fprintf (output, "HTTP Error [%ld], sleeping 30 seconds...\n", http_code);
 				sleep (30);
+			} else {
+				break;
 			}
 
 			if (errors >= 2) {
